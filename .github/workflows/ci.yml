@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B -ntp verify
+
+      - name: Start application and check it boots
+        run: |
+          java -jar backend/target/tracelite-backend.jar > app.log 2>&1 &
+          APP_PID=$!
+          for i in $(seq 1 30); do
+            if grep -q "Started TraceLiteApplication" app.log; then
+              kill "$APP_PID"
+              exit 0
+            fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              cat app.log
+              exit 1
+            fi
+            sleep 2
+          done
+          cat app.log
+          kill "$APP_PID"
+          exit 1
