@@ -59,7 +59,7 @@ tracelite/
 ├── frontend/                Dashboard (scaffolded later)
 ├── docs/                    Architecture, API, database, security, development, testing docs
 │   └── decisions/           Architecture decision records
-└── scripts/development/     Development scripts (smoke test)
+└── scripts/                 Development (smoke test) and CI helper scripts
 ```
 
 Empty feature packages are tracked with `.gitkeep` files and will be populated as each feature is implemented.

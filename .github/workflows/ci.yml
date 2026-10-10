@@ -29,6 +29,10 @@ jobs:
           set -o pipefail
           ./mvnw -B -ntp verify 2>&1 | tee build.log
 
+      - name: Summarize test results
+        if: always()
+        run: scripts/ci/summarize-tests.sh backend/target/surefire-reports
+
       - name: Annotate build and test failures
         if: failure()
         run: scripts/ci/annotate-failures.sh build.log backend/target/surefire-reports

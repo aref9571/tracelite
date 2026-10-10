@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Testcontainers integration tests for application startup, database connectivity, Flyway configuration and health endpoints.
 - `scripts/development/smoke-test.sh`, which checks startup failure on missing or wrong configuration, health probes and graceful shutdown.
 - CI runs on every branch and pull request, and runs the smoke test against the Docker Compose database.
+- CI publishes test totals, Maven errors and failing test reports as check-run annotations.
 - Repository structure, root and backend Maven configuration, and Maven Wrapper.
 - Minimal Spring Boot application and application-context test.
 - GitHub Actions workflow that builds the backend, runs the tests, and checks that the packaged application starts.

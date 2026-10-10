@@ -14,11 +14,13 @@ Docker must be running: the integration tests start disposable PostgreSQL 17 con
 `.github/workflows/ci.yml` runs on every push and pull request:
 
 1. `./mvnw -B -ntp verify` on JDK 21, including the Testcontainers tests.
-2. `shellcheck` on the development scripts.
+2. `shellcheck` on the development and CI scripts.
 3. `docker compose config` with a generated `.env`.
 4. `docker compose up --wait postgres`, using the real `docker-compose.yml`.
 5. `scripts/development/smoke-test.sh` against that database.
 6. `docker compose down --volumes`.
+
+Test totals are published as a notice on the check run. On failure, Maven errors and failing Surefire reports are published as error annotations, so the cause is visible without opening the job log.
 
 ## Current tests
 
