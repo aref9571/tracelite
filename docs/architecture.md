@@ -13,7 +13,7 @@ TraceLite is a modular monolith: one Spring Boot application, one PostgreSQL dat
                                  └─────────────────────────┘
 ```
 
-Only the empty Spring Boot application exists today. The diagram describes the target design.
+Today the backend connects to PostgreSQL, runs Flyway on startup and exposes health probes. It has no business endpoints yet. The diagram describes the target design.
 
 ## Build layout
 
@@ -52,7 +52,20 @@ Code under `backend/src/main/java/com/tracelite` is organised by feature, with l
 
 ## Configuration
 
-Configuration comes from `application.yml` with environment-variable overrides. Secrets are never stored in the repository. Variables are documented in `.env.example` and [development.md](development.md).
+Configuration comes from `application.yml`, overridden by environment variables through Spring Boot's relaxed binding (for example, `SPRING_DATASOURCE_URL` sets `spring.datasource.url`). Secrets are never stored in the repository. Variables are documented in `.env.example` and [development.md](development.md#configuration).
+
+- The **default profile** is the production-like baseline. Every environment-specific value must be supplied, and the application fails fast at startup when database settings are missing.
+- The **`local` profile** only adds developer conveniences: verbose logging and detailed health output.
+- **Tests** get their database from Testcontainers through `@ServiceConnection`, not from a test profile. The master plan lists an `application-test.yml` in `src/main/resources`; it is deliberately not used, because test settings should not ship inside the production jar.
+
+## Runtime lifecycle
+
+1. Spring Boot binds configuration and creates the HikariCP pool.
+2. Flyway connects to PostgreSQL and applies pending migrations. A failure here stops startup.
+3. The embedded Tomcat server starts, and readiness reports `UP` once the database health check passes.
+4. On `SIGTERM`, the server stops accepting new requests and waits up to 20 seconds for in-flight requests before shutting down.
+
+Liveness (`/actuator/health/liveness`) reflects only the application's internal state, so a database outage makes the instance not ready without making it look broken.
 
 ## Error handling
 

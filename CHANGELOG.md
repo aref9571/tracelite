@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- PostgreSQL 17 for local development through Docker Compose, bound to localhost, with a health check and a persistent volume.
+- Database configuration through `SPRING_DATASOURCE_*` environment variables, with no default credentials.
+- Flyway configured with validation on migrate and `clean` disabled.
+- Actuator health, liveness and readiness endpoints; readiness includes the database. Only `health` and `info` are exposed.
+- Graceful shutdown, log levels, and a `local` profile for development.
+- Testcontainers integration tests for application startup, database connectivity, Flyway configuration and health endpoints.
+- `scripts/development/smoke-test.sh`, which checks startup failure on missing or wrong configuration, health probes and graceful shutdown.
+- CI runs on every branch and pull request, and runs the smoke test against the Docker Compose database.
 - Repository structure, root and backend Maven configuration, and Maven Wrapper.
 - Minimal Spring Boot application and application-context test.
 - GitHub Actions workflow that builds the backend, runs the tests, and checks that the packaged application starts.

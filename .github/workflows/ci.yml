@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
 
 permissions:
@@ -12,7 +12,7 @@ jobs:
   backend:
     name: Backend build and tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -27,21 +27,27 @@ jobs:
       - name: Build and test
         run: ./mvnw -B -ntp verify
 
-      - name: Start application and check it boots
+      - name: Lint development scripts
+        run: shellcheck scripts/development/*.sh
+
+      - name: Create local environment file
         run: |
-          java -jar backend/target/tracelite-backend.jar > app.log 2>&1 &
-          APP_PID=$!
-          for i in $(seq 1 30); do
-            if grep -q "Started TraceLiteApplication" app.log; then
-              kill "$APP_PID"
-              exit 0
-            fi
-            if ! kill -0 "$APP_PID" 2>/dev/null; then
-              cat app.log
-              exit 1
-            fi
-            sleep 2
-          done
-          cat app.log
-          kill "$APP_PID"
-          exit 1
+          cp .env.example .env
+          sed -i "s/^SPRING_DATASOURCE_PASSWORD=.*/SPRING_DATASOURCE_PASSWORD=$(openssl rand -hex 24)/" .env
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
+      - name: Start PostgreSQL with Docker Compose
+        run: docker compose up --detach --wait postgres
+
+      - name: Smoke test against Docker Compose PostgreSQL
+        run: |
+          set -a
+          . ./.env
+          set +a
+          scripts/development/smoke-test.sh backend/target/tracelite-backend.jar
+
+      - name: Stop Docker Compose services
+        if: always() && hashFiles('.env') != ''
+        run: docker compose down --volumes

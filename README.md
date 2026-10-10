@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: initial skeleton.** The repository currently contains the project structure, build configuration, documentation, and a minimal Spring Boot application with no business functionality. None of the capabilities listed under *Planned capabilities* are implemented yet.
+> **Status: development environment in place, no business features yet.** The backend runs against PostgreSQL, applies Flyway migrations on startup, and exposes health probes. Error ingestion, issue grouping and the dashboard are not implemented yet; see the status column below.
 
 ## The problem
 
@@ -16,7 +16,7 @@ When an application fails in production, developers need fast answers:
 
 Raw logs answer these questions slowly. TraceLite collects errors as structured events and groups repeated failures so they can be triaged as a single issue.
 
-## Planned capabilities
+## Capabilities
 
 | Capability | Status |
 |---|---|
@@ -27,18 +27,19 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | Issue resolve / reopen lifecycle | Planned |
 | Issue occurrence statistics | Planned |
 | API-key authentication for ingestion and management | Planned |
-| Health and readiness endpoints | Planned |
+| Health, liveness and readiness endpoints | Implemented |
 | OpenAPI documentation | Planned |
 | React/TypeScript investigation dashboard | Planned |
-| GitHub Actions CI: backend build, tests, and startup check | Implemented (basic) |
-| Docker Compose local environment and full CI pipeline | Planned |
+| Docker Compose PostgreSQL for local development | Implemented |
+| GitHub Actions CI: build, Testcontainers tests, Compose smoke test | Implemented |
+| Backend container image and full CI quality checks | Planned |
 
 ## Technology stack
 
 - **Backend:** Java 21, Spring Boot 3.5, Maven (with Maven Wrapper)
-- **Persistence (planned):** PostgreSQL, Spring Data JPA, Flyway
-- **Testing:** JUnit 5, Spring Boot Test; Mockito, MockMvc, Testcontainers and JaCoCo as features arrive
-- **Infrastructure (planned):** Docker, Docker Compose, GitHub Actions
+- **Persistence:** PostgreSQL 17 and Flyway; Spring Data JPA planned
+- **Testing:** JUnit 5, Spring Boot Test, Testcontainers; Mockito, MockMvc and JaCoCo as features arrive
+- **Infrastructure:** Docker Compose, GitHub Actions; backend Dockerfile planned
 - **Frontend (planned):** React, TypeScript, Vite
 
 ## Repository structure
@@ -54,26 +55,29 @@ tracelite/
 │       ├── common/          Shared error handling and web support
 │       ├── event/           Error event ingestion (api, application, domain, persistence)
 │       └── issue/           Issue grouping and management (api, application, domain, persistence)
+├── docker-compose.yml       Local PostgreSQL
 ├── frontend/                Dashboard (scaffolded later)
 ├── docs/                    Architecture, API, database, security, development, testing docs
 │   └── decisions/           Architecture decision records
-└── scripts/development/     Local development helper scripts
+└── scripts/development/     Development scripts (smoke test)
 ```
 
 Empty feature packages are tracked with `.gitkeep` files and will be populated as each feature is implemented.
 
 ## Getting started
 
-Prerequisites: JDK 21. Maven does not need to be installed; the wrapper downloads it.
+Prerequisites: JDK 21 and Docker with Compose v2. Maven does not need to be installed; the wrapper downloads it.
 
 ```bash
-./mvnw verify                                   # build and run tests
-./mvnw -pl backend spring-boot:run              # start the application on port 8080
+cp .env.example .env                              # then set SPRING_DATASOURCE_PASSWORD
+docker compose up --detach --wait postgres        # PostgreSQL 17 on 127.0.0.1:5432
+./mvnw verify                                     # build and run tests (uses Testcontainers)
+set -a; . ./.env; set +a                          # export the variables for the backend
+./mvnw -pl backend spring-boot:run -Dspring-boot.run.profiles=local
+curl http://localhost:8080/actuator/health/readiness
 ```
 
-On Windows use `mvnw.cmd` instead of `./mvnw`. See [docs/development.md](docs/development.md) for details.
-
-The application currently starts with no API endpoints of its own.
+On Windows use `mvnw.cmd` instead of `./mvnw`. [docs/development.md](docs/development.md) has the full setup, configuration reference and troubleshooting.
 
 ## Development milestones
 
