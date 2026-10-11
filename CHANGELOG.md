@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Flyway migration `V1` creating the `issues` and `events` tables, with a unique scoped fingerprint, check constraints for every core invariant, a cascading foreign key, and indexes for listing and event history.
+- `Issue` and `ErrorEvent` JPA entities, with validated constructors, the `UNRESOLVED`/`RESOLVED` lifecycle and optimistic locking on issues.
+- `IssueRepository` and `ErrorEventRepository` (Spring Data JPA).
+- Domain unit tests and PostgreSQL repository and schema-constraint tests.
+
+### Changed
+
+- The backend uses Spring Data JPA instead of plain JDBC; Hibernate validates the entity mapping against the Flyway schema on startup and open-in-view is disabled.
+
 - PostgreSQL 17 for local development through Docker Compose, bound to localhost, with a health check and a persistent volume.
 - Database configuration through `SPRING_DATASOURCE_*` environment variables, with no default credentials.
 - Flyway configured with validation on migrate and `clean` disabled.

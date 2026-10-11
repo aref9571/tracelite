@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: development environment in place, no business features yet.** The backend runs against PostgreSQL, applies Flyway migrations on startup, and exposes health probes. Error ingestion, issue grouping and the dashboard are not implemented yet; see the status column below.
+> **Status: domain model and database schema in place, no business endpoints yet.** The backend runs against PostgreSQL, creates the `issues` and `events` schema with Flyway, maps it with JPA, and exposes health probes. Error ingestion, issue grouping and the dashboard are not implemented yet; see the status column below.
 
 ## The problem
 
@@ -24,9 +24,10 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | Deterministic fingerprinting and issue grouping | Planned |
 | Issue listing, filtering, search, and pagination | Planned |
 | Paginated event history per issue | Planned |
-| Issue resolve / reopen lifecycle | Planned |
+| Issue resolve / reopen lifecycle | Domain rules and schema implemented; API planned |
 | Issue occurrence statistics | Planned |
 | API-key authentication for ingestion and management | Planned |
+| PostgreSQL schema for issues and events, with constraints and indexes | Implemented |
 | Health, liveness and readiness endpoints | Implemented |
 | OpenAPI documentation | Planned |
 | React/TypeScript investigation dashboard | Planned |
@@ -37,8 +38,8 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 ## Technology stack
 
 - **Backend:** Java 21, Spring Boot 3.5, Maven (with Maven Wrapper)
-- **Persistence:** PostgreSQL 17 and Flyway; Spring Data JPA planned
-- **Testing:** JUnit 5, Spring Boot Test, Testcontainers; Mockito, MockMvc and JaCoCo as features arrive
+- **Persistence:** PostgreSQL 17, Flyway, Spring Data JPA (Hibernate)
+- **Testing:** JUnit 5, AssertJ, Spring Boot Test, Testcontainers; Mockito, MockMvc and JaCoCo as features arrive
 - **Infrastructure:** Docker Compose, GitHub Actions; backend Dockerfile planned
 - **Frontend (planned):** React, TypeScript, Vite
 

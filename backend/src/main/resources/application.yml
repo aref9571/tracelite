@@ -5,6 +5,14 @@ spring:
     hikari:
       pool-name: tracelite-db
       connection-timeout: 10000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   flyway:
     enabled: true
     locations: classpath:db/migration

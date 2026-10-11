@@ -1,9 +1,12 @@
 package com.tracelite.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.Location;
+import org.flywaydb.core.api.MigrationInfo;
+import org.flywaydb.core.api.MigrationState;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,5 +38,16 @@ class DatabaseConnectivityTests {
                 .containsExactly("classpath:db/migration");
         assertThat(flyway.getConfiguration().isCleanDisabled()).isTrue();
         assertThat(flyway.info().pending()).isEmpty();
+    }
+
+    @Test
+    void cleanDatabaseIsMigratedToTheCurrentSchema() {
+        assertThat(flyway.info().applied())
+                .extracting(migration -> migration.getVersion().getVersion(), MigrationInfo::getState)
+                .containsExactly(tuple("1", MigrationState.SUCCESS));
+        assertThat(jdbcTemplate.queryForList(
+                "select table_name from information_schema.tables where table_schema = 'public' "
+                        + "and table_name in ('issues', 'events') order by table_name", String.class))
+                .containsExactly("events", "issues");
     }
 }

@@ -13,7 +13,7 @@ TraceLite is a modular monolith: one Spring Boot application, one PostgreSQL dat
                                  └─────────────────────────┘
 ```
 
-Today the backend connects to PostgreSQL, runs Flyway on startup and exposes health probes. It has no business endpoints yet. The diagram describes the target design.
+Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. The issue and event domain model and repositories exist; there are no business endpoints yet. The diagram describes the target design.
 
 ## Build layout
 
@@ -49,6 +49,40 @@ Code under `backend/src/main/java/com/tracelite` is organised by feature, with l
 - Domain code does not depend on web or persistence frameworks beyond JPA mapping.
 - Repositories never decide HTTP status codes.
 - Interfaces are introduced only where they add a real boundary or testing benefit.
+
+## Domain model
+
+The domain has two entities, mapped with JPA. The full schema is in [database.md](database.md).
+
+- **`Issue`** (`issue.domain`): a group of similar errors from one application and environment, identified by a fingerprint. It holds the lifecycle status, the occurrence count, and the first- and last-seen times.
+- **`ErrorEvent`** (`event.domain`): one received error, belonging to exactly one issue. Events are immutable once stored.
+
+Constructors validate required fields and the same length limits the database enforces, so an invalid entity cannot be created in memory. Entities have no setters; state changes go through domain methods.
+
+### Issue lifecycle
+
+```
+            resolve(at)
+ UNRESOLVED ──────────► RESOLVED
+      ▲                     │
+      └─────── reopen() ────┘
+```
+
+| From | To | Operation | Effect |
+|---|---|---|---|
+| (new) | `UNRESOLVED` | constructor | Occurrence count 1, first and last seen set |
+| `UNRESOLVED` | `RESOLVED` | `resolve(at)` | Records `resolvedAt` |
+| `RESOLVED` | `UNRESOLVED` | `reopen()` | Clears `resolvedAt` |
+
+Resolving a resolved issue or reopening an unresolved one throws `InvalidIssueStatusTransitionException` and leaves the issue unchanged; the API will map it to `409 Conflict` when the lifecycle endpoints are added on Day 7. The database repeats the rule that `resolved_at` is set exactly when the status is `RESOLVED`.
+
+Whether a new event for a resolved issue reopens it automatically (a regression) is decided with ingestion and grouping on Day 5.
+
+### Ownership of fields
+
+- Identity and descriptive fields (application, environment, fingerprint, exception type, first message, first seen) are set once and never updated.
+- `status` and `resolvedAt` change only through the lifecycle methods and are protected by optimistic locking (`@Version`).
+- `occurrenceCount` and `lastSeenAt` are mapped as non-updatable. Ingestion will change them with one atomic SQL update, so saving an entity can never overwrite a newer count.
 
 ## Configuration
 

@@ -54,7 +54,7 @@ set -a; . ./.env; set +a
 java -jar backend/target/tracelite-backend.jar --spring.profiles.active=local
 ```
 
-On startup Flyway applies any pending migrations from `backend/src/main/resources/db/migration`. There are no migrations yet; the schema arrives on Day 3.
+On startup Flyway applies any pending migrations from `backend/src/main/resources/db/migration`. Migration `V1` creates the `issues` and `events` tables; see [database.md](database.md).
 
 Stop the application with `Ctrl+C`. It shuts down gracefully: in-flight requests get up to 20 seconds to complete.
 
