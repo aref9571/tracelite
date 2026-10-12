@@ -3,6 +3,7 @@
 ## Prerequisites
 
 - JDK 21
+- Docker with Compose v2 (the integration tests use Testcontainers, and local PostgreSQL runs in Compose)
 - Git
 
 See [docs/development.md](docs/development.md) for the full local setup.

@@ -9,7 +9,6 @@ The backend exposes one business endpoint, `POST /api/v1/events`, and has no aut
 - **API errors:** a central exception handler returns RFC 9457 problem details with fixed, generic messages. Responses never include stack traces, exception class names, SQL, constraint names, parser details, host names, or the rejected values. Unexpected errors are logged on the server only.
 - **Logging:** ingestion does not log event payloads. Stored events are logged at `DEBUG` by ID only.
 - **SQL:** all database access goes through Spring Data JPA and parameterised queries; the one native query (`recordOccurrence`) uses bound parameters.
-
 - **Error responses:** Spring Boot's default error responses never include stack traces, exception class names, messages, or binding errors.
 - **Actuator:** only `health` and `info` are exposed over HTTP. Health shows only an overall status in the default profile; component details appear only with the `local` profile. Endpoints such as `env`, `configprops`, `beans` and `heapdump` are not exposed, and tests check this.
 - **Database credentials:** supplied only through environment variables. There are no default passwords in the code or configuration, and the application does not start without database settings.

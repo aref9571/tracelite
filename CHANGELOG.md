@@ -19,11 +19,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `Issue` and `ErrorEvent` JPA entities, with validated constructors, the `UNRESOLVED`/`RESOLVED` lifecycle and optimistic locking on issues.
 - `IssueRepository` and `ErrorEventRepository` (Spring Data JPA).
 - Domain unit tests and PostgreSQL repository and schema-constraint tests.
-
-### Changed
-
-- The backend uses Spring Data JPA instead of plain JDBC; Hibernate validates the entity mapping against the Flyway schema on startup and open-in-view is disabled.
-
 - PostgreSQL 17 for local development through Docker Compose, bound to localhost, with a health check and a persistent volume.
 - Database configuration through `SPRING_DATASOURCE_*` environment variables, with no default credentials.
 - Flyway configured with validation on migrate and `clean` disabled.
@@ -38,3 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - GitHub Actions workflow that builds the backend, runs the tests, and checks that the packaged application starts.
 - Initial README, contribution guide, security policy, and technical documentation.
 - Architecture decision records for the monolithic architecture, issue fingerprinting, and event ingestion.
+
+### Changed
+
+- The backend uses Spring Data JPA instead of plain JDBC; Hibernate validates the entity mapping against the Flyway schema on startup and open-in-view is disabled.

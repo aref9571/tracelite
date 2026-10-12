@@ -117,7 +117,7 @@ Other responses, all with a problem-details body:
 
 | Status | When |
 |---|---|
-| `405 Method Not Allowed` | Any method other than `POST` |
+| `405 Method Not Allowed` | Any method other than `POST` or `OPTIONS` (`OPTIONS` returns `200` with an `Allow: POST,OPTIONS` header) |
 | `413 Payload Too Large` | The body is larger than 256 KiB. A declared `Content-Length` is checked before reading; a chunked body is rejected as soon as the limit is passed |
 | `415 Unsupported Media Type` | `Content-Type` is not `application/json` |
 | `500 Internal Server Error` | An unexpected failure, including a database error. Nothing is stored. The body says only "An unexpected error occurred." |
