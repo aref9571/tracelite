@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -65,21 +66,15 @@ public class EventIngestionService {
     }
 
     private Issue findOrCreateIssue(ErrorEventSubmission submission, Instant receivedAt) {
-        String fingerprint = fingerprintGenerator.generate(submission.exceptionType());
-        return issueRepository
-                .findByApplicationAndEnvironmentAndFingerprint(
-                        submission.application(), submission.environment(), fingerprint)
-                .map(existing -> {
-                    issueRepository.recordOccurrence(existing.getId(), receivedAt);
-                    return existing;
-                })
-                .orElseGet(() -> issueRepository.save(new Issue(
-                        submission.application(),
-                        submission.environment(),
-                        fingerprint,
-                        submission.exceptionType(),
-                        submission.message(),
-                        receivedAt)));
+        String fingerprint = fingerprintGenerator.generate(submission.exceptionType(), submission.stackTrace());
+        UUID issueId = issueRepository.recordOccurrence(
+                submission.application(),
+                submission.environment(),
+                fingerprint,
+                submission.exceptionType(),
+                submission.message(),
+                receivedAt);
+        return issueRepository.getReferenceById(issueId);
     }
 
     private void requireOccurredAtWithinBounds(Instant occurredAt, Instant receivedAt) {

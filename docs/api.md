@@ -64,12 +64,14 @@ The limits on `occurredAt` and the request size are configurable (see [developme
 
 ### Grouping
 
-The server computes a fingerprint and looks up the issue with the same application, environment and fingerprint:
+The server computes a fingerprint from `exceptionType` and the Java stack frames in `stackTrace`, and finds the issue with the same application, environment and fingerprint:
 
-- If none exists, it creates an `UNRESOLVED` issue with an occurrence count of 1, and first-seen and last-seen times set to `receivedAt`.
-- If one exists, it adds 1 to the occurrence count and moves last-seen to `receivedAt` (never backwards) in one SQL statement. The issue's status does not change.
+- If none exists, it creates an `UNRESOLVED` issue with an occurrence count of 1, first-seen and last-seen times set to `receivedAt`, and the event's message.
+- If one exists, it adds 1 to the occurrence count and moves last-seen to `receivedAt` (never backwards). A `RESOLVED` issue becomes `UNRESOLVED` again.
 
-The Day 4 fingerprint is a placeholder: the SHA-256 hash of `exceptionType`, so every event with the same exception type in one application and environment joins the same issue. Day 5 replaces it with an algorithm based on normalised stack frames, and handles two first events for a new fingerprint arriving at the same time ([ADR 0002](decisions/0002-issue-fingerprinting.md), [ADR 0003](decisions/0003-event-ingestion.md)).
+The fingerprint ignores the message, line numbers, file names, module prefixes and numbers in runtime-generated class names, so the same failure stays in one issue across deploys. Events without a stack trace, or whose trace has no lines of the form `at class.method(...)`, are grouped by exception type alone. The full algorithm, examples and limitations are in [ADR 0002](decisions/0002-issue-fingerprinting.md).
+
+Simultaneous events for the same new failure all get `201` and join one issue ([ADR 0003](decisions/0003-event-ingestion.md)).
 
 ### Responses
 

@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: error ingestion works; issue management and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Grouping currently uses a placeholder fingerprint (the exception type); the stack-frame-based algorithm comes next. See the status column below.
+> **Status: error ingestion and issue grouping work; issue management and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. See the status column below.
 
 ## The problem
 
@@ -21,10 +21,10 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | Capability | Status |
 |---|---|
 | Error event ingestion (`POST /api/v1/events`) with validation and request-size limits | Implemented |
-| Deterministic fingerprinting and issue grouping | Placeholder implemented (groups by exception type); stack-frame algorithm planned |
+| Deterministic fingerprinting and issue grouping ([ADR 0002](docs/decisions/0002-issue-fingerprinting.md)) | Implemented |
 | Issue listing, filtering, search, and pagination | Planned |
 | Paginated event history per issue | Planned |
-| Issue resolve / reopen lifecycle | Domain rules and schema implemented; API planned |
+| Issue resolve / reopen lifecycle | Domain rules, schema and automatic reopen on a new event implemented; API planned |
 | Issue occurrence statistics | Planned |
 | API-key authentication for ingestion and management | Planned |
 | PostgreSQL schema for issues and events, with constraints and indexes | Implemented |

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -25,7 +24,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,12 +35,17 @@ class EventIngestionServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-10-12T09:00:00Z");
     private static final String EXCEPTION_TYPE = "java.lang.IllegalStateException";
-    private static final String FINGERPRINT = new FingerprintGenerator().generate(EXCEPTION_TYPE);
+    private static final String STACK_TRACE = "at com.example.Cart.checkout(Cart.java:42)";
+    private static final String FINGERPRINT = new FingerprintGenerator().generate(EXCEPTION_TYPE, STACK_TRACE);
+    private static final UUID ISSUE_ID = UUID.randomUUID();
 
     private final IssueRepository issueRepository = mock(IssueRepository.class);
     private final ErrorEventRepository errorEventRepository = mock(ErrorEventRepository.class);
     private final IngestionProperties properties =
             new IngestionProperties(DataSize.ofKilobytes(256), Duration.ofMinutes(5), Duration.ofDays(30));
+
+    private final Issue issue = new Issue("checkout-service", "production", FINGERPRINT, EXCEPTION_TYPE,
+            "Cart is empty", NOW.minus(Duration.ofHours(1)));
 
     private EventIngestionService service;
 
@@ -54,50 +57,37 @@ class EventIngestionServiceTest {
                 new FingerprintGenerator(),
                 properties,
                 Clock.fixed(NOW, ZoneOffset.UTC));
-        when(issueRepository.save(any(Issue.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        ReflectionTestUtils.setField(issue, "id", ISSUE_ID);
+        when(issueRepository.recordOccurrence(any(), any(), any(), any(), any(), any())).thenReturn(ISSUE_ID);
+        when(issueRepository.getReferenceById(ISSUE_ID)).thenReturn(issue);
         when(errorEventRepository.save(any(ErrorEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
-    void createsANewIssueForAnUnknownFingerprint() {
-        when(issueRepository.findByApplicationAndEnvironmentAndFingerprint("checkout-service", "production", FINGERPRINT))
-                .thenReturn(Optional.empty());
-
+    void recordsTheOccurrenceOnTheIssueForTheEventsFingerprint() {
         ErrorEvent event = service.ingest(submission(NOW.minusSeconds(30)));
 
-        ArgumentCaptor<Issue> issueCaptor = ArgumentCaptor.forClass(Issue.class);
-        verify(issueRepository).save(issueCaptor.capture());
-        Issue issue = issueCaptor.getValue();
-        assertThat(issue.getApplication()).isEqualTo("checkout-service");
-        assertThat(issue.getEnvironment()).isEqualTo("production");
-        assertThat(issue.getFingerprint()).isEqualTo(FINGERPRINT);
-        assertThat(issue.getExceptionType()).isEqualTo(EXCEPTION_TYPE);
-        assertThat(issue.getMessage()).isEqualTo("Cart is empty");
-        assertThat(issue.getFirstSeenAt()).isEqualTo(NOW);
+        verify(issueRepository).recordOccurrence(
+                "checkout-service", "production", FINGERPRINT, EXCEPTION_TYPE, "Cart is empty", NOW);
+        verify(issueRepository).getReferenceById(ISSUE_ID);
         assertThat(event.getIssue()).isSameAs(issue);
-        verify(issueRepository, never()).recordOccurrence(any(), any());
     }
 
     @Test
-    void recordsAnOccurrenceOnAnExistingIssue() {
-        Issue existing = new Issue("checkout-service", "production", FINGERPRINT, EXCEPTION_TYPE, "Cart is empty",
-                NOW.minus(Duration.ofHours(1)));
-        UUID issueId = UUID.randomUUID();
-        ReflectionTestUtils.setField(existing, "id", issueId);
-        when(issueRepository.findByApplicationAndEnvironmentAndFingerprint("checkout-service", "production", FINGERPRINT))
-                .thenReturn(Optional.of(existing));
+    void fingerprintsTheStackTrace() {
+        ErrorEventSubmission withOtherTrace = new ErrorEventSubmission("checkout-service", "production",
+                EXCEPTION_TYPE, "Cart is empty", "at com.example.Cart.addItem(Cart.java:42)", NOW, null, null);
 
-        ErrorEvent event = service.ingest(submission(NOW.minusSeconds(30)));
+        service.ingest(withOtherTrace);
 
-        verify(issueRepository).recordOccurrence(issueId, NOW);
-        verify(issueRepository, never()).save(any());
-        assertThat(event.getIssue()).isSameAs(existing);
+        String otherFingerprint = new FingerprintGenerator().generate(EXCEPTION_TYPE, withOtherTrace.stackTrace());
+        assertThat(otherFingerprint).isNotEqualTo(FINGERPRINT);
+        verify(issueRepository).recordOccurrence(
+                "checkout-service", "production", otherFingerprint, EXCEPTION_TYPE, "Cart is empty", NOW);
     }
 
     @Test
     void storesTheEventWithServerReceivedTime() {
-        when(issueRepository.findByApplicationAndEnvironmentAndFingerprint(any(), any(), any()))
-                .thenReturn(Optional.empty());
         Instant occurredAt = NOW.minusSeconds(30);
 
         service.ingest(submission(occurredAt));
@@ -118,8 +108,6 @@ class EventIngestionServiceTest {
     void truncatesTimestampsToTheMicrosecondsPostgresStores() {
         service = new EventIngestionService(issueRepository, errorEventRepository, new FingerprintGenerator(),
                 properties, Clock.fixed(NOW.plusNanos(123_456_789), ZoneOffset.UTC));
-        when(issueRepository.findByApplicationAndEnvironmentAndFingerprint(any(), any(), any()))
-                .thenReturn(Optional.empty());
 
         ErrorEvent event = service.ingest(submission(NOW.minusSeconds(30).plusNanos(987_654_321)));
 
@@ -129,9 +117,6 @@ class EventIngestionServiceTest {
 
     @Test
     void acceptsOccurredAtAtTheEdgesOfTheAllowedRange() {
-        when(issueRepository.findByApplicationAndEnvironmentAndFingerprint(any(), any(), any()))
-                .thenReturn(Optional.empty());
-
         service.ingest(submission(NOW.plus(Duration.ofMinutes(5))));
         service.ingest(submission(NOW.minus(Duration.ofDays(30))));
 
@@ -186,7 +171,7 @@ class EventIngestionServiceTest {
                 "production",
                 EXCEPTION_TYPE,
                 "Cart is empty",
-                "at com.example.Cart.checkout(Cart.java:42)",
+                STACK_TRACE,
                 occurredAt,
                 "req-123",
                 Map.of("orderId", "o-1"));

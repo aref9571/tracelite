@@ -110,6 +110,63 @@ class EventIngestionIntegrationTests {
     }
 
     @Test
+    void groupsEventsWhoseStackTracesDifferOnlyInLineNumbersAndMessages() {
+        Instant occurredAt = Instant.now().minusSeconds(10);
+        String first = event("production", "java.lang.IllegalStateException", occurredAt);
+        String second = first.replace("Cart.java:42", "Cart.java:57").replace("Cart is empty", "Cart 9 is empty");
+
+        Object firstIssueId = postEvent(first).getBody().get("issueId");
+        Object secondIssueId = postEvent(second).getBody().get("issueId");
+
+        assertThat(secondIssueId).isEqualTo(firstIssueId);
+        assertThat(jdbcTemplate.queryForObject("select message from issues", String.class)).isEqualTo("Cart is empty");
+    }
+
+    @Test
+    void keepsIssuesSeparateWhenTheThrowingMethodDiffers() {
+        Instant occurredAt = Instant.now().minusSeconds(10);
+        String checkout = event("production", "java.lang.IllegalStateException", occurredAt);
+        String addItem = checkout.replace("Cart.checkout", "Cart.addItem");
+
+        Object checkoutIssueId = postEvent(checkout).getBody().get("issueId");
+        Object addItemIssueId = postEvent(addItem).getBody().get("issueId");
+
+        assertThat(addItemIssueId).isNotEqualTo(checkoutIssueId);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from issues", Long.class)).isEqualTo(2);
+    }
+
+    @Test
+    void groupsEventsWithoutAStackTraceByExceptionType() {
+        Instant occurredAt = Instant.now().minusSeconds(10);
+        String withoutTrace = event("production", "java.lang.IllegalStateException", occurredAt)
+                .replaceAll("\"stackTrace\": \".*\",", "");
+
+        Object firstIssueId = postEvent(withoutTrace).getBody().get("issueId");
+        Object secondIssueId = postEvent(withoutTrace).getBody().get("issueId");
+
+        assertThat(withoutTrace).doesNotContain("stackTrace");
+        assertThat(secondIssueId).isEqualTo(firstIssueId);
+    }
+
+    @Test
+    void aNewEventReopensAResolvedIssue() {
+        Instant occurredAt = Instant.now().minusSeconds(10);
+        String event = event("production", "java.lang.IllegalStateException", occurredAt);
+        Object issueId = postEvent(event).getBody().get("issueId");
+        jdbcTemplate.update("update issues set status = 'RESOLVED', resolved_at = now() where id = ?::uuid", issueId);
+
+        ResponseEntity<Map<String, Object>> response = postEvent(event);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().get("issueId")).isEqualTo(issueId);
+        Map<String, Object> issue = jdbcTemplate.queryForMap(
+                "select status, resolved_at, occurrence_count from issues where id = ?::uuid", issueId);
+        assertThat(issue).containsEntry("status", "UNRESOLVED")
+                .containsEntry("occurrence_count", 2L);
+        assertThat(issue.get("resolved_at")).isNull();
+    }
+
+    @Test
     void rejectsAnInvalidEventWithoutStoringAnything() {
         ResponseEntity<Map<String, Object>> response = postEvent("{\"application\": \"checkout-service\"}");
 

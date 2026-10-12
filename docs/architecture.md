@@ -76,13 +76,13 @@ Constructors validate required fields and the same length limits the database en
 
 Resolving a resolved issue or reopening an unresolved one throws `InvalidIssueStatusTransitionException` and leaves the issue unchanged; the API will map it to `409 Conflict` when the lifecycle endpoints are added on Day 7. The database repeats the rule that `resolved_at` is set exactly when the status is `RESOLVED`.
 
-Whether a new event for a resolved issue reopens it automatically (a regression) is decided with grouping on Day 5. Until then, ingestion counts the event and leaves the status unchanged.
+A new event for a resolved issue reopens it automatically, because the failure has come back. Ingestion does this in SQL, not through `reopen()`, as part of the statement that counts the event, and increments `version` when it does, so a lifecycle change based on an older read fails instead of overwriting the reopen ([ADR 0003](decisions/0003-event-ingestion.md)).
 
 ### Ownership of fields
 
 - Identity and descriptive fields (application, environment, fingerprint, exception type, first message, first seen) are set once and never updated.
 - `status` and `resolvedAt` change only through the lifecycle methods and are protected by optimistic locking (`@Version`).
-- `occurrenceCount` and `lastSeenAt` are mapped as non-updatable. Ingestion changes them with one atomic SQL update (`IssueRepository.recordOccurrence`), so saving an entity can never overwrite a newer count.
+- `occurrenceCount` and `lastSeenAt` are mapped as non-updatable. Ingestion changes them with one atomic SQL statement (`IssueRepository.recordOccurrence`), so saving an entity can never overwrite a newer count.
 
 ## Configuration
 
@@ -107,10 +107,10 @@ Liveness (`/actuator/health/liveness`) reflects only the application's internal 
 
 1. `RequestSizeLimitFilter` (`common.web`) rejects bodies over the configured limit with `413`.
 2. `EventIngestionController` (`event.api`) parses the JSON into `IngestEventRequest`, validates it with Bean Validation, and maps it to an `ErrorEventSubmission`.
-3. `EventIngestionService` (`event.application`) runs in one transaction. It takes `receivedAt` from the injected `Clock`, checks `occurredAt` against the allowed range and rejects null characters, asks `FingerprintGenerator` (`issue.application`) for the fingerprint, then either creates the issue or records an occurrence on it, and saves the `ErrorEvent`.
+3. `EventIngestionService` (`event.application`) runs in one transaction. It takes `receivedAt` from the injected `Clock`, checks `occurredAt` against the allowed range and rejects null characters, asks `FingerprintGenerator` (`issue.application`) for the fingerprint, calls `IssueRepository.recordOccurrence`, which creates the issue or counts the occurrence in one `INSERT ... ON CONFLICT` statement and returns the issue ID, and saves the `ErrorEvent`.
 4. The controller returns `201` with the event ID, issue ID and `receivedAt` only after the transaction commits. If anything fails, the transaction rolls back and the client gets an error status, never `201`.
 
-`FingerprintGenerator` is isolated so that Day 5 can replace its placeholder algorithm (a hash of the exception type) without touching the ingestion flow. Limits live in `IngestionProperties` (`tracelite.ingestion.*`), and the clock is a bean so tests can fix the time.
+`FingerprintGenerator` hashes the exception type and up to 30 normalised stack frames ([ADR 0002](decisions/0002-issue-fingerprinting.md)). It is a plain component with no state, so the algorithm can change without touching the ingestion flow. Limits live in `IngestionProperties` (`tracelite.ingestion.*`), and the clock is a bean so tests can fix the time.
 
 ## Error handling
 

@@ -139,38 +139,98 @@ class IssueRepositoryTests {
     }
 
     @Test
+    void recordOccurrenceCreatesAnIssueForANewScopedFingerprint() {
+        UUID issueId = recordOccurrence("production", FIRST_SEEN);
+        entityManager.clear();
+
+        Issue created = issueRepository.findById(issueId).orElseThrow();
+        assertThat(created.getApplication()).isEqualTo("checkout-service");
+        assertThat(created.getEnvironment()).isEqualTo("production");
+        assertThat(created.getFingerprint()).isEqualTo(FINGERPRINT);
+        assertThat(created.getExceptionType()).isEqualTo("java.lang.IllegalStateException");
+        assertThat(created.getMessage()).isEqualTo("Cart is empty");
+        assertThat(created.getStatus()).isEqualTo(IssueStatus.UNRESOLVED);
+        assertThat(created.getOccurrenceCount()).isEqualTo(1);
+        assertThat(created.getFirstSeenAt()).isEqualTo(FIRST_SEEN);
+        assertThat(created.getLastSeenAt()).isEqualTo(FIRST_SEEN);
+        assertThat(created.getVersion()).isZero();
+    }
+
+    @Test
     void recordOccurrenceIncrementsTheCountAndAdvancesLastSeen() {
         Issue issue = issueRepository.saveAndFlush(newIssue("production"));
         Instant seenAt = FIRST_SEEN.plusSeconds(300);
 
-        int updated = issueRepository.recordOccurrence(issue.getId(), seenAt);
+        UUID issueId = issueRepository.recordOccurrence("checkout-service", "production", FINGERPRINT,
+                "java.lang.IllegalStateException", "A different message", seenAt);
         entityManager.clear();
 
         Issue reloaded = issueRepository.findById(issue.getId()).orElseThrow();
-        assertThat(updated).isEqualTo(1);
+        assertThat(issueId).isEqualTo(issue.getId());
+        assertThat(issueRepository.count()).isEqualTo(1);
         assertThat(reloaded.getOccurrenceCount()).isEqualTo(2);
         assertThat(reloaded.getLastSeenAt()).isEqualTo(seenAt);
         assertThat(reloaded.getFirstSeenAt()).isEqualTo(FIRST_SEEN);
+        assertThat(reloaded.getMessage()).isEqualTo("Cart is empty");
         assertThat(reloaded.getVersion()).isZero();
     }
 
     @Test
     void recordOccurrenceNeverMovesLastSeenBackwards() {
-        Issue issue = issueRepository.saveAndFlush(newIssue("production"));
+        UUID issueId = recordOccurrence("production", FIRST_SEEN);
         Instant later = FIRST_SEEN.plusSeconds(300);
-        issueRepository.recordOccurrence(issue.getId(), later);
+        recordOccurrence("production", later);
 
-        issueRepository.recordOccurrence(issue.getId(), FIRST_SEEN.plusSeconds(60));
+        recordOccurrence("production", FIRST_SEEN.plusSeconds(60));
         entityManager.clear();
 
-        Issue reloaded = issueRepository.findById(issue.getId()).orElseThrow();
+        Issue reloaded = issueRepository.findById(issueId).orElseThrow();
         assertThat(reloaded.getOccurrenceCount()).isEqualTo(3);
         assertThat(reloaded.getLastSeenAt()).isEqualTo(later);
     }
 
     @Test
-    void recordOccurrenceUpdatesNothingForAnUnknownIssue() {
-        assertThat(issueRepository.recordOccurrence(UUID.randomUUID(), FIRST_SEEN)).isZero();
+    void recordOccurrenceKeepsScopesSeparate() {
+        UUID production = recordOccurrence("production", FIRST_SEEN);
+        UUID staging = recordOccurrence("staging", FIRST_SEEN);
+
+        assertThat(staging).isNotEqualTo(production);
+        assertThat(issueRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void recordOccurrenceReopensAResolvedIssueAndIncrementsTheVersion() {
+        Issue issue = newIssue("production");
+        issue.resolve(FIRST_SEEN.plusSeconds(60));
+        issueRepository.saveAndFlush(issue);
+        long versionWhenResolved = issue.getVersion();
+
+        recordOccurrence("production", FIRST_SEEN.plusSeconds(120));
+        entityManager.clear();
+
+        Issue reopened = issueRepository.findById(issue.getId()).orElseThrow();
+        assertThat(reopened.getStatus()).isEqualTo(IssueStatus.UNRESOLVED);
+        assertThat(reopened.getResolvedAt()).isNull();
+        assertThat(reopened.getOccurrenceCount()).isEqualTo(2);
+        assertThat(reopened.getVersion()).isEqualTo(versionWhenResolved + 1);
+    }
+
+    @Test
+    void aStatusChangeBasedOnAVersionReadBeforeAReopenIsRejected() {
+        Issue issue = newIssue("production");
+        issue.resolve(FIRST_SEEN.plusSeconds(60));
+        issueRepository.saveAndFlush(issue);
+        recordOccurrence("production", FIRST_SEEN.plusSeconds(120));
+
+        issue.reopen();
+
+        assertThatThrownBy(() -> issueRepository.saveAndFlush(issue))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    }
+
+    private UUID recordOccurrence(String environment, Instant seenAt) {
+        return issueRepository.recordOccurrence("checkout-service", environment, FINGERPRINT,
+                "java.lang.IllegalStateException", "Cart is empty", seenAt);
     }
 
     private static Issue newIssue(String environment) {

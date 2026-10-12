@@ -57,7 +57,7 @@ One row per group of similar errors in one application and environment.
 | `id` | `uuid` | Primary key |
 | `application` | `varchar(100)` | Required, not blank |
 | `environment` | `varchar(50)` | Required, not blank |
-| `fingerprint` | `varchar(64)` | Required, 64 lowercase hex characters (a SHA-256 digest; the algorithm is defined on Day 5) |
+| `fingerprint` | `varchar(64)` | Required, 64 lowercase hex characters (a SHA-256 digest; see [ADR 0002](decisions/0002-issue-fingerprinting.md)) |
 | `exception_type` | `varchar(255)` | Required, not blank |
 | `message` | `varchar(4000)` | Optional; the message of the first event |
 | `status` | `varchar(16)` | `UNRESOLVED` or `RESOLVED` |
@@ -66,7 +66,7 @@ One row per group of similar errors in one application and environment.
 | `resolved_at` | `timestamptz` | Set exactly when `status = 'RESOLVED'` |
 | `version` | `bigint` | Optimistic-locking version, incremented on every entity update |
 
-`issues_scope_fingerprint_uk` makes `(application, environment, fingerprint)` unique. This is what prevents two concurrent requests from creating duplicate issues for the same failure; ingestion relies on it. Day 4 ingestion looks the issue up and inserts it if missing; handling two first events for the same new fingerprint at the same moment is Day 5 work.
+`issues_scope_fingerprint_uk` makes `(application, environment, fingerprint)` unique. This is what prevents two concurrent requests from creating duplicate issues for the same failure; ingestion relies on it. Ingestion names it in `INSERT ... ON CONFLICT ON CONSTRAINT issues_scope_fingerprint_uk`, so renaming the constraint requires changing `IssueRepository.recordOccurrence`.
 
 ### `events`
 
@@ -104,6 +104,6 @@ Deleting an issue deletes its events (`on delete cascade`). An event never exist
 
 ## Concurrency
 
-- **Issue creation:** the unique scoped fingerprint is the guard against duplicate issues.
+- **Issue creation:** the unique scoped fingerprint is the guard against duplicate issues. `IssueRepository.recordOccurrence` inserts the issue with `ON CONFLICT ... DO UPDATE`, so when two transactions insert the same new scoped fingerprint, PostgreSQL makes the second wait until the first commits and then runs the update branch instead of failing. Both events are stored, one issue exists and its count is 2. `ConcurrentIngestionTests` checks this with simultaneous requests.
 - **Status changes:** `issues.version` is mapped with JPA `@Version`, so a resolve or reopen based on a stale read fails with an optimistic-locking error instead of overwriting another change.
-- **Occurrence counters:** ingestion updates `occurrence_count` and `last_seen_at` with one atomic SQL statement, `IssueRepository.recordOccurrence`: `occurrence_count = occurrence_count + 1, last_seen_at = GREATEST(last_seen_at, :seenAt)`. There is no read-modify-write in Java, so concurrent events for an existing issue never lose an increment, and `last_seen_at` never moves backwards. The statement does not change `version`, so counting events never makes a concurrent resolve fail. Both columns are mapped as non-updatable, so saving an `Issue` entity (for example after a status change) can never write back a stale count. See [ADR 0003](decisions/0003-event-ingestion.md).
+- **Occurrence counters:** the update branch of the same statement sets `occurrence_count = occurrence_count + 1, last_seen_at = GREATEST(last_seen_at, :seenAt)`, and reopens a resolved issue. There is no read-modify-write in Java, so concurrent events for an existing issue never lose an increment, and `last_seen_at` never moves backwards. The statement changes `version` only when it reopens a resolved issue, so counting events never makes a concurrent resolve fail. Both columns are mapped as non-updatable, so saving an `Issue` entity (for example after a status change) can never write back a stale count. See [ADR 0003](decisions/0003-event-ingestion.md).
