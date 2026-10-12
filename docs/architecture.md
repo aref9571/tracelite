@@ -13,7 +13,7 @@ TraceLite is a modular monolith: one Spring Boot application, one PostgreSQL dat
                                  └─────────────────────────┘
 ```
 
-Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. The issue and event domain model and repositories exist; there are no business endpoints yet. The diagram describes the target design.
+Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues. The dashboard, the issue management endpoints and authentication are not built yet; the diagram describes the target design.
 
 ## Build layout
 
@@ -76,13 +76,13 @@ Constructors validate required fields and the same length limits the database en
 
 Resolving a resolved issue or reopening an unresolved one throws `InvalidIssueStatusTransitionException` and leaves the issue unchanged; the API will map it to `409 Conflict` when the lifecycle endpoints are added on Day 7. The database repeats the rule that `resolved_at` is set exactly when the status is `RESOLVED`.
 
-Whether a new event for a resolved issue reopens it automatically (a regression) is decided with ingestion and grouping on Day 5.
+Whether a new event for a resolved issue reopens it automatically (a regression) is decided with grouping on Day 5. Until then, ingestion counts the event and leaves the status unchanged.
 
 ### Ownership of fields
 
 - Identity and descriptive fields (application, environment, fingerprint, exception type, first message, first seen) are set once and never updated.
 - `status` and `resolvedAt` change only through the lifecycle methods and are protected by optimistic locking (`@Version`).
-- `occurrenceCount` and `lastSeenAt` are mapped as non-updatable. Ingestion will change them with one atomic SQL update, so saving an entity can never overwrite a newer count.
+- `occurrenceCount` and `lastSeenAt` are mapped as non-updatable. Ingestion changes them with one atomic SQL update (`IssueRepository.recordOccurrence`), so saving an entity can never overwrite a newer count.
 
 ## Configuration
 
@@ -101,6 +101,27 @@ Configuration comes from `application.yml`, overridden by environment variables 
 
 Liveness (`/actuator/health/liveness`) reflects only the application's internal state, so a database outage makes the instance not ready without making it look broken.
 
+## Event ingestion
+
+`POST /api/v1/events` is handled synchronously ([ADR 0003](decisions/0003-event-ingestion.md)):
+
+1. `RequestSizeLimitFilter` (`common.web`) rejects bodies over the configured limit with `413`.
+2. `EventIngestionController` (`event.api`) parses the JSON into `IngestEventRequest`, validates it with Bean Validation, and maps it to an `ErrorEventSubmission`.
+3. `EventIngestionService` (`event.application`) runs in one transaction. It takes `receivedAt` from the injected `Clock`, checks `occurredAt` against the allowed range and rejects null characters, asks `FingerprintGenerator` (`issue.application`) for the fingerprint, then either creates the issue or records an occurrence on it, and saves the `ErrorEvent`.
+4. The controller returns `201` with the event ID, issue ID and `receivedAt` only after the transaction commits. If anything fails, the transaction rolls back and the client gets an error status, never `201`.
+
+`FingerprintGenerator` is isolated so that Day 5 can replace its placeholder algorithm (a hash of the exception type) without touching the ingestion flow. Limits live in `IngestionProperties` (`tracelite.ingestion.*`), and the clock is a bean so tests can fix the time.
+
 ## Error handling
 
-Spring Boot's default error responses are configured never to include stack traces, exception class names, or exception messages. A centralised exception handler with a consistent error format will be added with the first API endpoint.
+`GlobalExceptionHandler` (`common.exception`) extends Spring's `ResponseEntityExceptionHandler`, so every error from a controller, including Spring MVC's own (`404`, `405`, `415`, malformed JSON), becomes an RFC 9457 problem-details response with the same shape:
+
+| Situation | Status | Title |
+|---|---|---|
+| Bean Validation failure, or `InvalidErrorEventException` from the service | `400` | Invalid request, with an `errors` list of `field` and `message` |
+| Missing, unparseable or wrongly typed body | `400` | Malformed request |
+| Body over the size limit | `413` | Request too large |
+| Database unreachable or transient database failure (`CannotCreateTransactionException`, `DataAccessResourceFailureException`, `TransientDataAccessException`) | `503` | Service unavailable |
+| Anything else, including other database errors | `500` | Internal server error |
+
+Details are fixed strings, so internal exception messages, SQL and stack traces never reach clients. `503` and `500` are logged with the exception; validation failures are not logged. Spring Boot's own error page, used for errors outside controllers, is still configured never to include stack traces, exception class names or messages.

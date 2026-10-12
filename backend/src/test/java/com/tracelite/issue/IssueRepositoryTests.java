@@ -138,6 +138,41 @@ class IssueRepositoryTests {
         assertThat(reloaded.getLastSeenAt()).isEqualTo(lastSeen);
     }
 
+    @Test
+    void recordOccurrenceIncrementsTheCountAndAdvancesLastSeen() {
+        Issue issue = issueRepository.saveAndFlush(newIssue("production"));
+        Instant seenAt = FIRST_SEEN.plusSeconds(300);
+
+        int updated = issueRepository.recordOccurrence(issue.getId(), seenAt);
+        entityManager.clear();
+
+        Issue reloaded = issueRepository.findById(issue.getId()).orElseThrow();
+        assertThat(updated).isEqualTo(1);
+        assertThat(reloaded.getOccurrenceCount()).isEqualTo(2);
+        assertThat(reloaded.getLastSeenAt()).isEqualTo(seenAt);
+        assertThat(reloaded.getFirstSeenAt()).isEqualTo(FIRST_SEEN);
+        assertThat(reloaded.getVersion()).isZero();
+    }
+
+    @Test
+    void recordOccurrenceNeverMovesLastSeenBackwards() {
+        Issue issue = issueRepository.saveAndFlush(newIssue("production"));
+        Instant later = FIRST_SEEN.plusSeconds(300);
+        issueRepository.recordOccurrence(issue.getId(), later);
+
+        issueRepository.recordOccurrence(issue.getId(), FIRST_SEEN.plusSeconds(60));
+        entityManager.clear();
+
+        Issue reloaded = issueRepository.findById(issue.getId()).orElseThrow();
+        assertThat(reloaded.getOccurrenceCount()).isEqualTo(3);
+        assertThat(reloaded.getLastSeenAt()).isEqualTo(later);
+    }
+
+    @Test
+    void recordOccurrenceUpdatesNothingForAnUnknownIssue() {
+        assertThat(issueRepository.recordOccurrence(UUID.randomUUID(), FIRST_SEEN)).isZero();
+    }
+
     private static Issue newIssue(String environment) {
         return new Issue("checkout-service", environment, FINGERPRINT, "java.lang.IllegalStateException", "Cart is empty", FIRST_SEEN);
     }

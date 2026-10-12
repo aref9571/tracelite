@@ -84,8 +84,11 @@ Readiness returns HTTP 503 when the database is unreachable. In the default prof
 | `SPRING_DATASOURCE_PASSWORD` | — | yes | Database password; also used by Compose to initialise PostgreSQL |
 | `TRACELITE_DB_PORT` | `5432` | no | Host port Compose publishes PostgreSQL on |
 | `SERVER_PORT` | `8080` | no | Backend HTTP port |
+| `TRACELITE_INGESTION_MAX_REQUEST_SIZE` | `256KB` | no | Largest accepted body for `/api/**` requests; larger bodies get `413` |
+| `TRACELITE_INGESTION_MAX_CLOCK_SKEW` | `5m` | no | How far after the server's time an event's `occurredAt` may be |
+| `TRACELITE_INGESTION_MAX_EVENT_AGE` | `30d` | no | How far before the server's time an event's `occurredAt` may be |
 
-The `SPRING_DATASOURCE_*` names are Spring Boot's standard environment-variable mapping for `spring.datasource.*`, so no custom placeholders are involved.
+The `SPRING_DATASOURCE_*` names are Spring Boot's standard environment-variable mapping for `spring.datasource.*`, so no custom placeholders are involved. The `TRACELITE_INGESTION_*` variables map to `tracelite.ingestion.*` in `application.yml` the same way; sizes use Spring's `DataSize` format (`256KB`) and durations its `Duration` format (`5m`, `30d`).
 
 ### Missing configuration
 

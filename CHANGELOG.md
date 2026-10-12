@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `POST /api/v1/events` for error ingestion: validated request and response DTOs, a transactional application service, `201 Created` with the event ID, issue ID and server receive time.
+- Validation that matches the database limits, identifier rules for application, environment and correlation ID, a bounded `occurredAt` (5 minutes ahead to 30 days back), and rejection of null characters.
+- A 256 KiB request-size limit for `/api/**`, enforced for both `Content-Length` and chunked bodies.
+- Centralised exception handling with RFC 9457 problem details: `400`, `405`, `413`, `415`, `500` and `503`, with no internal details in responses.
+- Issue creation or an atomic occurrence-count update for each event, using a placeholder fingerprint (SHA-256 of the exception type) that Day 5 replaces.
+- Configurable ingestion limits (`tracelite.ingestion.*`) and an injectable `Clock`.
+- Controller, service, filter, repository and PostgreSQL integration tests, including malformed JSON, validation, size limits and transaction rollback.
 - Flyway migration `V1` creating the `issues` and `events` tables, with a unique scoped fingerprint, check constraints for every core invariant, a cascading foreign key, and indexes for listing and event history.
 - `Issue` and `ErrorEvent` JPA entities, with validated constructors, the `UNRESOLVED`/`RESOLVED` lifecycle and optimistic locking on issues.
 - `IssueRepository` and `ErrorEventRepository` (Spring Data JPA).

@@ -45,6 +45,12 @@ management:
         readiness:
           include: readinessState,db
 
+tracelite:
+  ingestion:
+    max-request-size: 256KB
+    max-clock-skew: 5m
+    max-event-age: 30d
+
 logging:
   level:
     root: INFO

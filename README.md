@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: domain model and database schema in place, no business endpoints yet.** The backend runs against PostgreSQL, creates the `issues` and `events` schema with Flyway, maps it with JPA, and exposes health probes. Error ingestion, issue grouping and the dashboard are not implemented yet; see the status column below.
+> **Status: error ingestion works; issue management and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Grouping currently uses a placeholder fingerprint (the exception type); the stack-frame-based algorithm comes next. See the status column below.
 
 ## The problem
 
@@ -20,14 +20,15 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 
 | Capability | Status |
 |---|---|
-| Error event ingestion (`POST /api/v1/events`) with validation | Planned |
-| Deterministic fingerprinting and issue grouping | Planned |
+| Error event ingestion (`POST /api/v1/events`) with validation and request-size limits | Implemented |
+| Deterministic fingerprinting and issue grouping | Placeholder implemented (groups by exception type); stack-frame algorithm planned |
 | Issue listing, filtering, search, and pagination | Planned |
 | Paginated event history per issue | Planned |
 | Issue resolve / reopen lifecycle | Domain rules and schema implemented; API planned |
 | Issue occurrence statistics | Planned |
 | API-key authentication for ingestion and management | Planned |
 | PostgreSQL schema for issues and events, with constraints and indexes | Implemented |
+| Consistent RFC 9457 error responses without internal details | Implemented |
 | Health, liveness and readiness endpoints | Implemented |
 | OpenAPI documentation | Planned |
 | React/TypeScript investigation dashboard | Planned |
@@ -39,7 +40,7 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 
 - **Backend:** Java 21, Spring Boot 3.5, Maven (with Maven Wrapper)
 - **Persistence:** PostgreSQL 17, Flyway, Spring Data JPA (Hibernate)
-- **Testing:** JUnit 5, AssertJ, Spring Boot Test, Testcontainers; Mockito, MockMvc and JaCoCo as features arrive
+- **Testing:** JUnit 5, AssertJ, Mockito, MockMvc, Spring Boot Test, Testcontainers; JaCoCo planned
 - **Infrastructure:** Docker Compose, GitHub Actions; backend Dockerfile planned
 - **Frontend (planned):** React, TypeScript, Vite
 
@@ -76,6 +77,13 @@ docker compose up --detach --wait postgres        # PostgreSQL 17 on 127.0.0.1:5
 set -a; . ./.env; set +a                          # export the variables for the backend
 ./mvnw -pl backend spring-boot:run -Dspring-boot.run.profiles=local
 curl http://localhost:8080/actuator/health/readiness
+```
+
+Send a test event (see [docs/api.md](docs/api.md) for every field and response):
+
+```bash
+curl -i http://localhost:8080/api/v1/events -H 'Content-Type: application/json' \
+  -d '{"application":"demo","environment":"local","exceptionType":"java.lang.IllegalStateException","occurredAt":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
 ```
 
 On Windows use `mvnw.cmd` instead of `./mvnw`. [docs/development.md](docs/development.md) has the full setup, configuration reference and troubleshooting.

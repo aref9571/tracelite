@@ -66,7 +66,7 @@ One row per group of similar errors in one application and environment.
 | `resolved_at` | `timestamptz` | Set exactly when `status = 'RESOLVED'` |
 | `version` | `bigint` | Optimistic-locking version, incremented on every entity update |
 
-`issues_scope_fingerprint_uk` makes `(application, environment, fingerprint)` unique. This is what prevents two concurrent requests from creating duplicate issues for the same failure; ingestion on Days 4 and 5 relies on it.
+`issues_scope_fingerprint_uk` makes `(application, environment, fingerprint)` unique. This is what prevents two concurrent requests from creating duplicate issues for the same failure; ingestion relies on it. Day 4 ingestion looks the issue up and inserts it if missing; handling two first events for the same new fingerprint at the same moment is Day 5 work.
 
 ### `events`
 
@@ -106,4 +106,4 @@ Deleting an issue deletes its events (`on delete cascade`). An event never exist
 
 - **Issue creation:** the unique scoped fingerprint is the guard against duplicate issues.
 - **Status changes:** `issues.version` is mapped with JPA `@Version`, so a resolve or reopen based on a stale read fails with an optimistic-locking error instead of overwriting another change.
-- **Occurrence counters:** `occurrence_count` and `last_seen_at` will be updated with a single atomic SQL statement during ingestion (Days 4 and 5), not with read-modify-write in Java. Both columns are mapped as non-updatable, so saving an `Issue` entity (for example after a status change) can never write back a stale count. See [ADR 0003](decisions/0003-event-ingestion.md).
+- **Occurrence counters:** ingestion updates `occurrence_count` and `last_seen_at` with one atomic SQL statement, `IssueRepository.recordOccurrence`: `occurrence_count = occurrence_count + 1, last_seen_at = GREATEST(last_seen_at, :seenAt)`. There is no read-modify-write in Java, so concurrent events for an existing issue never lose an increment, and `last_seen_at` never moves backwards. The statement does not change `version`, so counting events never makes a concurrent resolve fail. Both columns are mapped as non-updatable, so saving an `Issue` entity (for example after a status change) can never write back a stale count. See [ADR 0003](decisions/0003-event-ingestion.md).
