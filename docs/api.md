@@ -11,12 +11,10 @@ Authentication is not implemented yet. API-key authentication for these endpoint
 | `POST` | `/api/v1/events` | Ingest an error event | Implemented |
 | `GET` | `/api/v1/issues` | List, filter, and search issues | Implemented |
 | `GET` | `/api/v1/issues/{id}` | Retrieve issue details | Implemented |
-| `GET` | `/api/v1/issues/{id}/events` | Retrieve paginated events for an issue | Planned |
-| `POST` | `/api/v1/issues/{id}/resolve` | Mark an issue as resolved | Planned |
-| `POST` | `/api/v1/issues/{id}/reopen` | Reopen a resolved issue | Planned |
-| `GET` | `/api/v1/issues/{id}/stats` | Retrieve occurrence statistics | Planned |
-
-Planned paths and payloads are provisional and will be documented here as each endpoint is implemented.
+| `GET` | `/api/v1/issues/{id}/events` | Retrieve paginated events for an issue | Implemented |
+| `POST` | `/api/v1/issues/{id}/resolve` | Mark an issue as resolved | Implemented |
+| `POST` | `/api/v1/issues/{id}/reopen` | Reopen a resolved issue | Implemented |
+| `GET` | `/api/v1/issues/{id}/stats` | Retrieve occurrence statistics | Implemented |
 
 ## OpenAPI
 
@@ -240,6 +238,132 @@ Returns one issue by its ID, in the same shape as an item in the list response.
   "instance": "/api/v1/issues/7b0c6a3e-0000-4000-8000-000000000000"
 }
 ```
+
+## `GET /api/v1/issues/{id}/events`
+
+Returns the stored events of one issue, newest first, one page at a time.
+
+| Parameter | Type | Default | Rules and meaning |
+|---|---|---|---|
+| `page` | integer | `0` | Zero-based page number, 0 to 10,000 |
+| `size` | integer | `20` | Events per page, 1 to 100 |
+
+Events are ordered by `receivedAt` (the server's receive time), newest first, and then by event ID, descending, so events received in the same microsecond always come back in the same order and paging never repeats or skips an event while no new events arrive. A new event appears at the top of page 0 and shifts the later pages by one. The order does not depend on the client's `occurredAt`, which can be wrong or arrive late.
+
+### Response
+
+**`200 OK`**:
+
+```json
+{
+  "items": [
+    {
+      "id": "0d9c8b7a-6f5e-4d3c-8b2a-1f0e9d8c7b6a",
+      "exceptionType": "java.lang.IllegalStateException",
+      "message": "Cart is empty",
+      "stackTrace": "java.lang.IllegalStateException: Cart is empty\n\tat com.example.cart.CartService.checkout(CartService.java:42)",
+      "occurredAt": "2026-10-13T09:59:58Z",
+      "receivedAt": "2026-10-13T10:00:00.123456Z",
+      "correlationId": "req-7f3a",
+      "context": { "orderId": "o-1001" }
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalItems": 1,
+  "totalPages": 1
+}
+```
+
+Each item is the event exactly as it was ingested, with the stack trace as sent (up to 65,536 characters). `message`, `stackTrace`, `correlationId` and `context` are `null` when the client did not send them. Pagination metadata works as for the issue list; a page past the end returns `200` with an empty `items` list. An issue always has at least one event when it is created through ingestion.
+
+| Status | When |
+|---|---|
+| `200 OK` | The issue exists, even when the requested page is empty |
+| `400 Bad Request` | `id` is not a UUID, or `page` or `size` is out of range or not a number |
+| `404 Not Found` | No issue has this ID |
+
+## `POST /api/v1/issues/{id}/resolve`
+
+Marks an issue as resolved and records the server's current time as `resolvedAt`. There is no request body. The response is the updated issue, in the same shape as `GET /api/v1/issues/{id}`.
+
+## `POST /api/v1/issues/{id}/reopen`
+
+Sets a resolved issue back to `UNRESOLVED` and clears `resolvedAt`. There is no request body. The response is the updated issue.
+
+### Lifecycle rules
+
+| Current status | `resolve` | `reopen` |
+|---|---|---|
+| `UNRESOLVED` | `200`, becomes `RESOLVED` | `409 Conflict`, unchanged |
+| `RESOLVED` | `409 Conflict`, unchanged | `200`, becomes `UNRESOLVED` |
+
+A new event for a resolved issue also reopens it ([ADR 0003](decisions/0003-event-ingestion.md)).
+
+Repeating a request is predictable: the first request changes the issue, and every repeat gets `409` and changes nothing, so the original `resolvedAt` is kept. The `409` body names the current status, so a client that retries after a lost response can see that the issue is already in the state it asked for:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Invalid status transition",
+  "status": 409,
+  "detail": "The issue status cannot change from RESOLVED to RESOLVED.",
+  "instance": "/api/v1/issues/5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b/resolve",
+  "currentStatus": "RESOLVED",
+  "requestedStatus": "RESOLVED"
+}
+```
+
+When two requests change the same issue at the same time, or a new event reopens the issue while a request is changing it, exactly one change wins. The other request gets `409` with the title `Concurrent modification` and the detail `The resource was changed by another request. Fetch it again and retry.` Nothing is changed by the losing request.
+
+| Status | When |
+|---|---|
+| `200 OK` | The status changed |
+| `400 Bad Request` | `id` is not a UUID |
+| `404 Not Found` | No issue has this ID |
+| `409 Conflict` | The issue is already in the requested status, or another change won a race |
+
+```bash
+curl -X POST http://localhost:8080/api/v1/issues/5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b/resolve
+```
+
+## `GET /api/v1/issues/{id}/stats`
+
+Returns occurrence statistics for one issue, calculated from the stored issue and events when the request is made.
+
+```json
+{
+  "issueId": "5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b",
+  "occurrenceCount": 42,
+  "storedEventCount": 42,
+  "firstSeenAt": "2026-10-01T08:00:00.123456Z",
+  "lastSeenAt": "2026-10-13T10:00:00.123456Z",
+  "calculatedAt": "2026-10-13T10:30:00.654321Z",
+  "eventsLast24Hours": 5,
+  "eventsLast7Days": 17,
+  "dailyEventCounts": [
+    { "date": "2026-09-30", "count": 0 },
+    { "date": "2026-10-13", "count": 3 }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `occurrenceCount` | The issue's counter, increased by every ingested event |
+| `storedEventCount` | The number of event rows stored for the issue. Equal to `occurrenceCount` today, because every ingested event is stored and nothing deletes events; they can differ once a retention policy exists |
+| `firstSeenAt`, `lastSeenAt` | The issue's first and most recent `receivedAt` |
+| `calculatedAt` | The server time the statistics were calculated at; every window below ends here |
+| `eventsLast24Hours`, `eventsLast7Days` | Events with `receivedAt` at or after `calculatedAt` minus 24 hours or 7 days |
+| `dailyEventCounts` | One entry per UTC calendar day for the last 14 days, oldest first and ending with today, including days with no events (shortened in the example above) |
+
+All windows use the server's `receivedAt`, like the issue list, and every value comes from one consistent database snapshot, so the counts agree with each other even while events are arriving.
+
+| Status | When |
+|---|---|
+| `200 OK` | The issue exists |
+| `400 Bad Request` | `id` is not a UUID |
+| `404 Not Found` | No issue has this ID |
 
 ## Error format
 

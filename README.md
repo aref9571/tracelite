@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: error ingestion, issue grouping and issue listing work; event history, the resolve and reopen API, authentication and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID. See the status column below.
+> **Status: error ingestion, issue grouping, issue listing, event history, statistics and the resolve and reopen API work; authentication and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID; their events can be paged newest first, their occurrence statistics read, and they can be resolved and reopened. See the status column below.
 
 ## The problem
 
@@ -23,9 +23,9 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | Error event ingestion (`POST /api/v1/events`) with validation and request-size limits | Implemented |
 | Deterministic fingerprinting and issue grouping ([ADR 0002](docs/decisions/0002-issue-fingerprinting.md)) | Implemented |
 | Issue listing, filtering, search, sorting and pagination (`GET /api/v1/issues`), and issue details (`GET /api/v1/issues/{id}`) | Implemented |
-| Paginated event history per issue | Planned |
-| Issue resolve / reopen lifecycle | Domain rules, schema and automatic reopen on a new event implemented; API planned |
-| Issue occurrence statistics | Planned |
+| Paginated event history per issue (`GET /api/v1/issues/{id}/events`) | Implemented |
+| Issue resolve / reopen lifecycle (`POST /api/v1/issues/{id}/resolve`, `/reopen`), with automatic reopen on a new event | Implemented |
+| Issue occurrence statistics (`GET /api/v1/issues/{id}/stats`) | Implemented |
 | API-key authentication for ingestion and management | Planned |
 | PostgreSQL schema for issues and events, with constraints and indexes | Implemented |
 | Consistent RFC 9457 error responses without internal details | Implemented |
@@ -92,6 +92,14 @@ List the issues, newest first, and filter them:
 ```bash
 curl 'http://localhost:8080/api/v1/issues'
 curl 'http://localhost:8080/api/v1/issues?status=UNRESOLVED&environment=local&query=illegalstate'
+```
+
+Investigate and resolve an issue, using an `id` from the list:
+
+```bash
+curl 'http://localhost:8080/api/v1/issues/<id>/events?size=5'
+curl 'http://localhost:8080/api/v1/issues/<id>/stats'
+curl -X POST 'http://localhost:8080/api/v1/issues/<id>/resolve'
 ```
 
 Browse every endpoint in Swagger UI at <http://localhost:8080/swagger-ui.html>.

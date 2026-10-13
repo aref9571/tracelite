@@ -74,7 +74,7 @@ Constructors validate required fields and the same length limits the database en
 | `UNRESOLVED` | `RESOLVED` | `resolve(at)` | Records `resolvedAt` |
 | `RESOLVED` | `UNRESOLVED` | `reopen()` | Clears `resolvedAt` |
 
-Resolving a resolved issue or reopening an unresolved one throws `InvalidIssueStatusTransitionException` and leaves the issue unchanged; the API will map it to `409 Conflict` when the lifecycle endpoints are added on Day 7. The database repeats the rule that `resolved_at` is set exactly when the status is `RESOLVED`.
+Resolving a resolved issue or reopening an unresolved one throws `InvalidIssueStatusTransitionException` and leaves the issue unchanged; the API maps it to `409 Conflict` ([ADR 0004](decisions/0004-issue-lifecycle-api.md)). The database repeats the rule that `resolved_at` is set exactly when the status is `RESOLVED`.
 
 A new event for a resolved issue reopens it automatically, because the failure has come back. Ingestion does this in SQL, not through `reopen()`, as part of the statement that counts the event, and increments `version` when it does, so a lifecycle change based on an older read fails instead of overwriting the reopen ([ADR 0003](decisions/0003-event-ingestion.md)).
 
@@ -122,7 +122,20 @@ Liveness (`/actuator/health/liveness`) reflects only the application's internal 
 
 Text search lowercases the input, escapes the `LIKE` wildcards `%`, `_` and `\`, and matches it anywhere in `lower(exception_type)` or `lower(message)`, which the trigram indexes from `V2` support ([database.md](database.md#indexes)). Every value is a bound parameter.
 
-The query endpoints return the stored issue fields. Event history and statistics are planned for Day 7.
+The query endpoints return the stored issue fields.
+
+## Issue lifecycle operations
+
+`POST /api/v1/issues/{id}/resolve` and `/reopen` go through `IssueLifecycleService` (`issue.application`). Each call runs in one transaction: it loads the issue, calls `resolve(at)` or `reopen()` on the entity, and saves it with `saveAndFlush`, so the version check runs inside the service and a lost race surfaces as an optimistic-locking exception before the response is built. `resolvedAt` comes from the injected `Clock`, truncated to microseconds to match PostgreSQL. Each change is logged at `INFO` with the issue ID only. The rules, repeated requests and concurrency are recorded in [ADR 0004](decisions/0004-issue-lifecycle-api.md).
+
+## Event history and statistics
+
+`GET /api/v1/issues/{id}/events` and `/stats` are served by `IssueHistoryController` (`event.api`) and `IssueHistoryService` (`event.application`). They live in the event feature because they read events; the event feature already depends on the issue feature, and the issue feature does not depend on events.
+
+- **Event history** checks that the issue exists (`404` otherwise) and asks `ErrorEventRepository` for one page sorted by `receivedAt` and then `id`, both descending. This order matches the `events_issue_received_idx` index. `EventResponse` maps every stored field except the issue reference.
+- **Statistics** read the issue, count its stored events, count events received in the last 24 hours and 7 days with derived Spring Data queries, and group the last 14 UTC days with one native query (`to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')`). The service fills days without events with zero, so the response always has 14 entries.
+
+Both methods run in read-only transactions with `REPEATABLE READ` isolation. In PostgreSQL that gives every statement in the transaction the same snapshot, so a page and its total, or the counts in one statistics response, never disagree because an event arrived between two queries.
 
 ## Error handling
 
@@ -132,9 +145,11 @@ The query endpoints return the stored issue fields. Event history and statistics
 |---|---|---|
 | Bean Validation failure, a query or path parameter that cannot be converted, or `InvalidErrorEventException` or `InvalidIssueQueryException` from a service | `400` | Invalid request, with an `errors` list of `field` and `message` |
 | `IssueNotFoundException` | `404` | Issue not found |
+| `InvalidIssueStatusTransitionException` (resolving a resolved issue or reopening an unresolved one) | `409` | Invalid status transition, with `currentStatus` and `requestedStatus` |
+| Optimistic-locking failure (another request changed the row first) | `409` | Concurrent modification |
 | Missing, unparseable or wrongly typed body | `400` | Malformed request |
 | Body over the size limit | `413` | Request too large |
 | Database unreachable or transient database failure (`CannotCreateTransactionException`, `DataAccessResourceFailureException`, `TransientDataAccessException`) | `503` | Service unavailable |
 | Anything else, including other database errors | `500` | Internal server error |
 
-Details are fixed strings, and conversion errors say only `has an invalid value`, so internal exception messages, SQL and stack traces never reach clients. `503` and `500` are logged with the exception; validation failures are not logged. Spring Boot's own error page, used for errors outside controllers, is still configured never to include stack traces, exception class names or messages.
+Details are fixed strings, and conversion errors say only `has an invalid value`, so internal exception messages, SQL and stack traces never reach clients. `503` and `500` are logged with the exception; validation failures and transition conflicts are not logged, and optimistic-locking conflicts are logged at `INFO` without details. The optimistic-locking handler is listed separately because Spring's `OptimisticLockingFailureException` is a `TransientDataAccessException`, which would otherwise be reported as `503`. Spring Boot's own error page, used for errors outside controllers, is still configured never to include stack traces, exception class names or messages.

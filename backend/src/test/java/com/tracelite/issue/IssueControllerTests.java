@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -18,10 +19,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.tracelite.config.IngestionConfiguration;
 import com.tracelite.issue.api.IssueController;
 import com.tracelite.issue.application.InvalidIssueQueryException;
+import com.tracelite.issue.application.IssueLifecycleService;
 import com.tracelite.issue.application.IssueNotFoundException;
 import com.tracelite.issue.application.IssueQueryService;
 import com.tracelite.issue.application.IssueSearchCriteria;
 import com.tracelite.issue.application.IssueSortField;
+import com.tracelite.issue.domain.InvalidIssueStatusTransitionException;
 import com.tracelite.issue.domain.Issue;
 import com.tracelite.issue.domain.IssueStatus;
 import java.time.Instant;
@@ -38,6 +41,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
@@ -55,6 +59,9 @@ class IssueControllerTests {
 
     @MockitoBean
     private IssueQueryService issueQueryService;
+
+    @MockitoBean
+    private IssueLifecycleService issueLifecycleService;
 
     @Test
     void listsIssuesWithDefaultsWhenNoParametersAreGiven() throws Exception {
@@ -231,6 +238,97 @@ class IssueControllerTests {
                 .andExpect(content().string(not(containsString("java."))));
 
         verifyNoInteractions(issueQueryService);
+    }
+
+    @Test
+    void resolvesAnIssue() throws Exception {
+        Issue issue = storedIssue();
+        issue.resolve(FIRST_SEEN.plusSeconds(90));
+        when(issueLifecycleService.resolve(ISSUE_ID)).thenReturn(issue);
+
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/resolve"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(ISSUE_ID.toString()))
+                .andExpect(jsonPath("$.status").value("RESOLVED"))
+                .andExpect(jsonPath("$.resolvedAt").value("2026-10-12T09:01:30Z"));
+    }
+
+    @Test
+    void reopensAnIssue() throws Exception {
+        when(issueLifecycleService.reopen(ISSUE_ID)).thenReturn(storedIssue());
+
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/reopen"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(ISSUE_ID.toString()))
+                .andExpect(jsonPath("$.status").value("UNRESOLVED"))
+                .andExpect(jsonPath("$.resolvedAt").value(nullValue()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "resolve, RESOLVED",
+            "reopen, UNRESOLVED"})
+    void returnsConflictWhenTheIssueIsAlreadyInTheRequestedStatus(String action, IssueStatus status)
+            throws Exception {
+        InvalidIssueStatusTransitionException conflict = new InvalidIssueStatusTransitionException(status, status);
+        when(issueLifecycleService.resolve(ISSUE_ID)).thenThrow(conflict);
+        when(issueLifecycleService.reopen(ISSUE_ID)).thenThrow(conflict);
+
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/" + action))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Invalid status transition"))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.detail")
+                        .value("The issue status cannot change from " + status + " to " + status + "."))
+                .andExpect(jsonPath("$.currentStatus").value(status.name()))
+                .andExpect(jsonPath("$.requestedStatus").value(status.name()));
+    }
+
+    @Test
+    void returnsConflictWhenAnotherRequestChangedTheIssueFirst() throws Exception {
+        when(issueLifecycleService.resolve(ISSUE_ID))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Issue.class, ISSUE_ID));
+
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/resolve"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Concurrent modification"))
+                .andExpect(jsonPath("$.detail")
+                        .value("The resource was changed by another request. Fetch it again and retry."))
+                .andExpect(content().string(not(containsString("com.tracelite"))))
+                .andExpect(content().string(not(containsString("optimistic locking failed"))));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"resolve", "reopen"})
+    void returnsNotFoundWhenChangingAnUnknownIssue(String action) throws Exception {
+        when(issueLifecycleService.resolve(ISSUE_ID)).thenThrow(new IssueNotFoundException(ISSUE_ID));
+        when(issueLifecycleService.reopen(ISSUE_ID)).thenThrow(new IssueNotFoundException(ISSUE_ID));
+
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/" + action))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.title").value("Issue not found"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"resolve", "reopen"})
+    void rejectsALifecycleChangeForAnIdThatIsNotAUuid(String action) throws Exception {
+        mockMvc.perform(post(ISSUES_PATH + "/not-a-uuid/" + action))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("id"))
+                .andExpect(jsonPath("$.errors[0].message").value("has an invalid value"));
+
+        verifyNoInteractions(issueLifecycleService);
+    }
+
+    @Test
+    void rejectsGetOnALifecycleEndpoint() throws Exception {
+        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID + "/resolve"))
+                .andExpect(status().isMethodNotAllowed());
+
+        verifyNoInteractions(issueLifecycleService);
     }
 
     private static Issue storedIssue() {

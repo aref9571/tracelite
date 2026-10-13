@@ -6,12 +6,14 @@ import com.tracelite.common.web.RequestTooLargeException;
 import com.tracelite.event.application.InvalidErrorEventException;
 import com.tracelite.issue.application.InvalidIssueQueryException;
 import com.tracelite.issue.application.IssueNotFoundException;
+import com.tracelite.issue.domain.InvalidIssueStatusTransitionException;
 import java.util.Comparator;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -88,6 +90,27 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ProblemDetail handleIssueNotFound(IssueNotFoundException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "No issue exists with this ID.");
         problem.setTitle("Issue not found");
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidIssueStatusTransitionException.class)
+    ProblemDetail handleInvalidStatusTransition(InvalidIssueStatusTransitionException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                "The issue status cannot change from " + exception.getCurrentStatus()
+                        + " to " + exception.getTargetStatus() + ".");
+        problem.setTitle("Invalid status transition");
+        problem.setProperty("currentStatus", exception.getCurrentStatus());
+        problem.setProperty("requestedStatus", exception.getTargetStatus());
+        return problem;
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ProblemDetail handleConcurrentModification(OptimisticLockingFailureException exception) {
+        log.info("Rejected a change to a resource that another request modified first");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, "The resource was changed by another request. Fetch it again and retry.");
+        problem.setTitle("Concurrent modification");
         return problem;
     }
 

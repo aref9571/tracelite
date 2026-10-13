@@ -97,7 +97,7 @@ Application and environment are not repeated on events; they come from the event
 | `issues_environment_last_seen_idx` | Listing issues filtered by environment |
 | `issues_exception_type_trgm_idx` | Text search in exception types (`lower(exception_type) LIKE '%...%'`) |
 | `issues_message_trgm_idx` | Text search in messages (`lower(message) LIKE '%...%'`) |
-| `events_issue_received_idx` | Paging through an issue's events, newest first |
+| `events_issue_received_idx` | Paging through an issue's events, newest first, and counting an issue's events in a time window for statistics |
 
 Every listing index ends with `id` so pagination has a deterministic tie-breaker. The issue list sorts by the chosen field and then by `id`; the default order (`last_seen_at DESC, id`) matches these indexes.
 
@@ -112,5 +112,6 @@ Deleting an issue deletes its events (`on delete cascade`). An event never exist
 ## Concurrency
 
 - **Issue creation:** the unique scoped fingerprint is the guard against duplicate issues. `IssueRepository.recordOccurrence` inserts the issue with `ON CONFLICT ... DO UPDATE`, so when two transactions insert the same new scoped fingerprint, PostgreSQL makes the second wait until the first commits and then runs the update branch instead of failing. Both events are stored, one issue exists and its count is 2. `ConcurrentIngestionTests` checks this with simultaneous requests.
-- **Status changes:** `issues.version` is mapped with JPA `@Version`, so a resolve or reopen based on a stale read fails with an optimistic-locking error instead of overwriting another change.
+- **Status changes:** `issues.version` is mapped with JPA `@Version`, so a resolve or reopen based on a stale read fails with an optimistic-locking error instead of overwriting another change. The API reports this as `409 Concurrent modification` ([ADR 0004](decisions/0004-issue-lifecycle-api.md)).
+- **Reads that span several queries:** event history (a page plus its total) and statistics (several counts) run in one read-only `REPEATABLE READ` transaction, so all their queries see the same snapshot.
 - **Occurrence counters:** the update branch of the same statement sets `occurrence_count = occurrence_count + 1, last_seen_at = GREATEST(last_seen_at, :seenAt)`, and reopens a resolved issue. There is no read-modify-write in Java, so concurrent events for an existing issue never lose an increment, and `last_seen_at` never moves backwards. The statement changes `version` only when it reopens a resolved issue, so counting events never makes a concurrent resolve fail. Both columns are mapped as non-updatable, so saving an `Issue` entity (for example after a status change) can never write back a stale count. See [ADR 0003](decisions/0003-event-ingestion.md).

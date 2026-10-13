@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `GET /api/v1/issues/{id}/events`: an issue's events with stack traces, timestamps, correlation ID and context, newest first by receive time with the event ID as tie-breaker, and page-based pagination.
+- `POST /api/v1/issues/{id}/resolve` and `POST /api/v1/issues/{id}/reopen`, returning the updated issue. Repeated requests and invalid transitions get `409` with the current status and change nothing; a request that loses a race with another change gets `409 Concurrent modification` ([ADR 0004](docs/decisions/0004-issue-lifecycle-api.md)).
+- `GET /api/v1/issues/{id}/stats`: occurrence count, stored event count, first and last seen, events in the last 24 hours and 7 days, and daily counts for the last 14 UTC days, read from one database snapshot.
+- Service, controller and HTTP integration tests for event history, statistics and the issue lifecycle, including simultaneous resolve requests.
 - `GET /api/v1/issues`: issue listing with filters for status, environment and a last-seen date range, case-insensitive text search over exception type and message, sorting by last seen, first seen or occurrence count, and page-based pagination with total counts. Sorting always ends with the issue ID, so the order is deterministic.
 - `GET /api/v1/issues/{id}`: issue details, with `404` problem details for an unknown ID and `400` for an ID that is not a UUID.
 - Validation of query and path parameters; values that cannot be converted are reported as `has an invalid value` without conversion details.

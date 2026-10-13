@@ -1,6 +1,7 @@
 package com.tracelite.issue.api;
 
 import com.tracelite.common.web.PageResponse;
+import com.tracelite.issue.application.IssueLifecycleService;
 import com.tracelite.issue.application.IssueQueryService;
 import com.tracelite.issue.domain.Issue;
 import jakarta.validation.Valid;
@@ -10,6 +11,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -18,9 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class IssueController {
 
     private final IssueQueryService issueQueryService;
+    private final IssueLifecycleService issueLifecycleService;
 
-    public IssueController(IssueQueryService issueQueryService) {
+    public IssueController(IssueQueryService issueQueryService, IssueLifecycleService issueLifecycleService) {
         this.issueQueryService = issueQueryService;
+        this.issueLifecycleService = issueLifecycleService;
     }
 
     @GetMapping
@@ -37,5 +41,15 @@ public class IssueController {
     @GetMapping("/{id}")
     public IssueResponse get(@PathVariable UUID id) {
         return IssueResponse.from(issueQueryService.getIssue(id));
+    }
+
+    @PostMapping("/{id}/resolve")
+    public IssueResponse resolve(@PathVariable UUID id) {
+        return IssueResponse.from(issueLifecycleService.resolve(id));
+    }
+
+    @PostMapping("/{id}/reopen")
+    public IssueResponse reopen(@PathVariable UUID id) {
+        return IssueResponse.from(issueLifecycleService.reopen(id));
     }
 }
