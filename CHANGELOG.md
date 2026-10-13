@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `GET /api/v1/issues`: issue listing with filters for status, environment and a last-seen date range, case-insensitive text search over exception type and message, sorting by last seen, first seen or occurrence count, and page-based pagination with total counts. Sorting always ends with the issue ID, so the order is deterministic.
+- `GET /api/v1/issues/{id}`: issue details, with `404` problem details for an unknown ID and `400` for an ID that is not a UUID.
+- Validation of query and path parameters; values that cannot be converted are reported as `has an invalid value` without conversion details.
+- Flyway migration `V2`: the `pg_trgm` extension and trigram indexes on `lower(exception_type)` and `lower(message)` for text search.
+- OpenAPI 3 document at `/v3/api-docs` and Swagger UI at `/swagger-ui.html` (springdoc-openapi 2.8).
+- Repository, service, controller and HTTP integration tests for issue queries.
 - Stack-frame fingerprinting: the exception type plus up to 30 normalised frames of the outermost exception (no messages, line numbers, module prefixes or runtime-generated numbers), with a fallback to the exception type when a trace has no Java frames.
 - Issue creation and occurrence counting in one PostgreSQL upsert (`INSERT ... ON CONFLICT`), so simultaneous first events for a new fingerprint create one issue instead of one request failing with `500`.
 - A new event for a resolved issue reopens it.

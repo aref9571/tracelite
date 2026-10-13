@@ -21,6 +21,7 @@ Flyway manages the schema:
 | Version | File | Purpose |
 |---|---|---|
 | 1 | `V1__create_issues_and_events.sql` | Creates the `issues` and `events` tables with their constraints and indexes |
+| 2 | `V2__add_issue_search_indexes.sql` | Enables the `pg_trgm` extension and adds trigram indexes for issue text search |
 
 ## Conventions
 
@@ -94,9 +95,15 @@ Application and environment are not repeated on events; they come from the event
 | `issues_last_seen_idx` | Listing issues by most recent activity |
 | `issues_status_last_seen_idx` | Listing issues filtered by status |
 | `issues_environment_last_seen_idx` | Listing issues filtered by environment |
+| `issues_exception_type_trgm_idx` | Text search in exception types (`lower(exception_type) LIKE '%...%'`) |
+| `issues_message_trgm_idx` | Text search in messages (`lower(message) LIKE '%...%'`) |
 | `events_issue_received_idx` | Paging through an issue's events, newest first |
 
-Every listing index ends with `id` so pagination has a deterministic tie-breaker. Indexes for message search are deferred to Day 6, when the search behaviour is defined.
+Every listing index ends with `id` so pagination has a deterministic tie-breaker. The issue list sorts by the chosen field and then by `id`; the default order (`last_seen_at DESC, id`) matches these indexes.
+
+Issue search finds text anywhere in the exception type or message, ignoring case. A B-tree index cannot help with a pattern that starts with `%`, so `V2` adds GIN indexes with `pg_trgm` trigram operators on `lower(exception_type)` and `lower(message)`. The query uses the same `lower(...)` expressions, so PostgreSQL can combine the two indexes with a bitmap OR instead of reading every row. Search text shorter than three characters produces no trigrams, so it still scans. `pg_trgm` ships with PostgreSQL and is a trusted extension, so the database owner can create it without superuser rights.
+
+Sorting by first-seen time or occurrence count, and filtering by status and environment together, have no dedicated index. Those queries sort the filtered rows in memory, which is fast at the expected size of a few thousand issues per environment; an index can be added if measurements on Day 13 show a need.
 
 ### Deletion policy
 

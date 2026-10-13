@@ -44,10 +44,13 @@ class DatabaseConnectivityTests {
     void cleanDatabaseIsMigratedToTheCurrentSchema() {
         assertThat(flyway.info().applied())
                 .extracting(migration -> migration.getVersion().getVersion(), MigrationInfo::getState)
-                .containsExactly(tuple("1", MigrationState.SUCCESS));
+                .containsExactly(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS));
         assertThat(jdbcTemplate.queryForList(
                 "select table_name from information_schema.tables where table_schema = 'public' "
                         + "and table_name in ('issues', 'events') order by table_name", String.class))
                 .containsExactly("events", "issues");
+        assertThat(jdbcTemplate.queryForList(
+                "select extname from pg_extension where extname = 'pg_trgm'", String.class))
+                .containsExactly("pg_trgm");
     }
 }

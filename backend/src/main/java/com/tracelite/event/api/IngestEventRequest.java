@@ -1,5 +1,6 @@
 package com.tracelite.event.api;
 
+import com.tracelite.common.web.IdentifierRules;
 import com.tracelite.event.application.ErrorEventSubmission;
 import com.tracelite.event.domain.ErrorEvent;
 import com.tracelite.issue.domain.Issue;
@@ -13,12 +14,12 @@ import java.util.Map;
 public record IngestEventRequest(
         @NotNull
         @Size(max = Issue.MAX_APPLICATION_LENGTH)
-        @Pattern(regexp = IDENTIFIER_PATTERN, message = IDENTIFIER_MESSAGE)
+        @Pattern(regexp = IdentifierRules.PATTERN, message = IdentifierRules.MESSAGE)
         String application,
 
         @NotNull
         @Size(max = Issue.MAX_ENVIRONMENT_LENGTH)
-        @Pattern(regexp = IDENTIFIER_PATTERN, message = IDENTIFIER_MESSAGE)
+        @Pattern(regexp = IdentifierRules.PATTERN, message = IdentifierRules.MESSAGE)
         String environment,
 
         @NotBlank
@@ -35,16 +36,13 @@ public record IngestEventRequest(
         Instant occurredAt,
 
         @Size(max = ErrorEvent.MAX_CORRELATION_ID_LENGTH)
-        @Pattern(regexp = IDENTIFIER_PATTERN, message = IDENTIFIER_MESSAGE)
+        @Pattern(regexp = IdentifierRules.PATTERN, message = IdentifierRules.MESSAGE)
         String correlationId,
 
         @Size(max = MAX_CONTEXT_ENTRIES)
         Map<String, Object> context) {
 
     public static final int MAX_CONTEXT_ENTRIES = 50;
-
-    static final String IDENTIFIER_PATTERN = "[A-Za-z0-9._:-]+";
-    static final String IDENTIFIER_MESSAGE = "must contain only letters, digits, '.', '_', ':' or '-'";
 
     ErrorEventSubmission toSubmission() {
         return new ErrorEventSubmission(

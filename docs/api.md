@@ -9,14 +9,23 @@ Authentication is not implemented yet. API-key authentication for these endpoint
 | Method | Path | Purpose | Status |
 |---|---|---|---|
 | `POST` | `/api/v1/events` | Ingest an error event | Implemented |
-| `GET` | `/api/v1/issues` | List, filter, and search issues | Planned |
-| `GET` | `/api/v1/issues/{id}` | Retrieve issue details | Planned |
+| `GET` | `/api/v1/issues` | List, filter, and search issues | Implemented |
+| `GET` | `/api/v1/issues/{id}` | Retrieve issue details | Implemented |
 | `GET` | `/api/v1/issues/{id}/events` | Retrieve paginated events for an issue | Planned |
 | `POST` | `/api/v1/issues/{id}/resolve` | Mark an issue as resolved | Planned |
 | `POST` | `/api/v1/issues/{id}/reopen` | Reopen a resolved issue | Planned |
 | `GET` | `/api/v1/issues/{id}/stats` | Retrieve occurrence statistics | Planned |
 
 Planned paths and payloads are provisional and will be documented here as each endpoint is implemented.
+
+## OpenAPI
+
+The running backend publishes an OpenAPI 3 description of the implemented endpoints, generated from the code by springdoc-openapi:
+
+- `GET /v3/api-docs`: the OpenAPI document as JSON.
+- `GET /swagger-ui.html`: Swagger UI for browsing and trying the endpoints.
+
+Like the rest of the API, these are not authenticated yet; Day 8 decides how they are exposed.
 
 ## `POST /api/v1/events`
 
@@ -137,6 +146,99 @@ curl -i http://localhost:8080/api/v1/events \
     "message": "Cart is empty",
     "occurredAt": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
   }'
+```
+
+## `GET /api/v1/issues`
+
+Lists issues, one page at a time. Every parameter is optional.
+
+| Parameter | Type | Default | Rules and meaning |
+|---|---|---|---|
+| `status` | `UNRESOLVED` or `RESOLVED` | any status | Exact match |
+| `environment` | string | any environment | Exact, case-sensitive match. 1 to 50 characters: letters, digits, `.`, `_`, `:` or `-` |
+| `lastSeenFrom` | ISO 8601 timestamp | none | Issues last seen at or after this time (inclusive) |
+| `lastSeenTo` | ISO 8601 timestamp | none | Issues last seen before this time (exclusive). Must be after `lastSeenFrom` when both are given |
+| `query` | string | none | Case-insensitive text that must appear in the exception type or the message. Leading and trailing spaces are ignored, and a blank value means no search. `%`, `_` and `\` are matched literally. At most 200 characters, no null characters |
+| `sort` | `LAST_SEEN`, `FIRST_SEEN` or `OCCURRENCE_COUNT` | `LAST_SEEN` | Field to sort by |
+| `direction` | `ASC` or `DESC` | `DESC` | Sort direction |
+| `page` | integer | `0` | Zero-based page number, 0 to 10,000 |
+| `size` | integer | `20` | Issues per page, 1 to 100 |
+
+Enum values are case-sensitive. Filters are combined with AND. Timestamps can use `Z` or an offset such as `+02:00`; encode `+` as `%2B` in a URL. The date range applies to an issue's last-seen time: an issue matches if its most recent event arrived in the range.
+
+Sorting is deterministic: after the chosen field, issues are ordered by ID (ascending), so issues with the same sort value always come back in the same order and paging through the results never repeats or skips an issue, as long as the data does not change between requests. A new event moves its issue's last-seen time, so the default order can shift between page requests while events are arriving.
+
+### Response
+
+**`200 OK`**:
+
+```json
+{
+  "items": [
+    {
+      "id": "5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b",
+      "application": "checkout-service",
+      "environment": "production",
+      "fingerprint": "3c1f0e5a7b9d2f4e6a8c0b1d3f5e7a9c2b4d6f8e0a1c3e5b7d9f1a3c5e7b9d0f",
+      "exceptionType": "java.lang.IllegalStateException",
+      "message": "Cart is empty",
+      "status": "UNRESOLVED",
+      "occurrenceCount": 42,
+      "firstSeenAt": "2026-10-12T09:00:00.123456Z",
+      "lastSeenAt": "2026-10-13T07:45:10.654321Z",
+      "resolvedAt": null
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalItems": 1,
+  "totalPages": 1
+}
+```
+
+`page` and `size` echo the request. `totalItems` counts every issue that matches the filters, and `totalPages` is `totalItems` divided by `size`, rounded up. A page past the end returns `200` with an empty `items` list and the same totals. `message` is the message of the issue's first event, and `resolvedAt` is `null` unless the issue is resolved.
+
+**`400 Bad Request`**: invalid parameters, in the same problem-details shape as for ingestion, with an `errors` list sorted by parameter name. A value that cannot be converted (an unknown `status`, `sort` or `direction`, an unparseable timestamp, a non-numeric `page`) is reported as `has an invalid value`. Conversion errors are reported before range checks, so a request with both kinds of mistake first lists only the conversion errors. The rejected values are not echoed back.
+
+```json
+{
+  "type": "about:blank",
+  "title": "Invalid request",
+  "status": 400,
+  "detail": "The request contains invalid fields.",
+  "instance": "/api/v1/issues",
+  "errors": [
+    { "field": "lastSeenTo", "message": "must be after lastSeenFrom" }
+  ]
+}
+```
+
+`503` and `500` behave as for ingestion.
+
+### Example
+
+```bash
+curl 'http://localhost:8080/api/v1/issues?status=UNRESOLVED&environment=production&query=timeout&size=10'
+```
+
+## `GET /api/v1/issues/{id}`
+
+Returns one issue by its ID, in the same shape as an item in the list response.
+
+| Status | When |
+|---|---|
+| `200 OK` | The issue exists |
+| `400 Bad Request` | `id` is not a UUID. The `errors` list has `{ "field": "id", "message": "has an invalid value" }` |
+| `404 Not Found` | No issue has this ID. The body is a problem detail with the title `Issue not found` |
+
+```json
+{
+  "type": "about:blank",
+  "title": "Issue not found",
+  "status": 404,
+  "detail": "No issue exists with this ID.",
+  "instance": "/api/v1/issues/7b0c6a3e-0000-4000-8000-000000000000"
+}
 ```
 
 ## Error format

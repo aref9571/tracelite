@@ -45,6 +45,12 @@ management:
         readiness:
           include: readinessState,db
 
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
 tracelite:
   ingestion:
     max-request-size: 256KB

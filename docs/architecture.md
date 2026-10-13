@@ -13,7 +13,7 @@ TraceLite is a modular monolith: one Spring Boot application, one PostgreSQL dat
                                  └─────────────────────────┘
 ```
 
-Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues. The dashboard, the issue management endpoints and authentication are not built yet; the diagram describes the target design.
+Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues, and lets clients list, filter, search and read issues. The dashboard, event history, the resolve and reopen endpoints and authentication are not built yet; the diagram describes the target design.
 
 ## Build layout
 
@@ -40,7 +40,7 @@ Code under `backend/src/main/java/com/tracelite` is organised by feature, with l
 | `event.api` / `issue.api` | Controllers and request/response DTOs |
 | `event.application` / `issue.application` | Use cases and transaction boundaries |
 | `event.domain` / `issue.domain` | Entities, value objects, and business rules |
-| `event.persistence` / `issue.persistence` | Spring Data repositories |
+| `event.persistence` / `issue.persistence` | Spring Data repositories and query specifications |
 
 ### Layering rules
 
@@ -112,16 +112,29 @@ Liveness (`/actuator/health/liveness`) reflects only the application's internal 
 
 `FingerprintGenerator` hashes the exception type and up to 30 normalised stack frames ([ADR 0002](decisions/0002-issue-fingerprinting.md)). It is a plain component with no state, so the algorithm can change without touching the ingestion flow. Limits live in `IngestionProperties` (`tracelite.ingestion.*`), and the clock is a bean so tests can fix the time.
 
+## Issue queries
+
+`GET /api/v1/issues` and `GET /api/v1/issues/{id}` are read-only:
+
+1. `IssueController` (`issue.api`) binds the query parameters to `IssueSearchRequest` and validates them with Bean Validation. It fills in the defaults (sort by last seen, newest first, page 0, 20 per page) and passes an `IssueSearchCriteria` to the service.
+2. `IssueQueryService` (`issue.application`) runs in a read-only transaction. It rejects a date range whose end is not after its start, builds one JPA `Specification` per filter that is set (`IssueSpecifications` in `issue.persistence`), and asks `IssueRepository` for one page sorted by the chosen field and then by `id`. Spring Data runs the page query and a matching `count` query.
+3. The controller maps each `Issue` to `IssueResponse` and the page to `PageResponse` (`common.web`), so the JSON shape does not depend on Spring Data's `Page` class or on the entity.
+
+Text search lowercases the input, escapes the `LIKE` wildcards `%`, `_` and `\`, and matches it anywhere in `lower(exception_type)` or `lower(message)`, which the trigram indexes from `V2` support ([database.md](database.md#indexes)). Every value is a bound parameter.
+
+The query endpoints return the stored issue fields. Event history and statistics are planned for Day 7.
+
 ## Error handling
 
 `GlobalExceptionHandler` (`common.exception`) extends Spring's `ResponseEntityExceptionHandler`, so every error from a controller, including Spring MVC's own (`404`, `405`, `415`, malformed JSON), becomes an RFC 9457 problem-details response with the same shape:
 
 | Situation | Status | Title |
 |---|---|---|
-| Bean Validation failure, or `InvalidErrorEventException` from the service | `400` | Invalid request, with an `errors` list of `field` and `message` |
+| Bean Validation failure, a query or path parameter that cannot be converted, or `InvalidErrorEventException` or `InvalidIssueQueryException` from a service | `400` | Invalid request, with an `errors` list of `field` and `message` |
+| `IssueNotFoundException` | `404` | Issue not found |
 | Missing, unparseable or wrongly typed body | `400` | Malformed request |
 | Body over the size limit | `413` | Request too large |
 | Database unreachable or transient database failure (`CannotCreateTransactionException`, `DataAccessResourceFailureException`, `TransientDataAccessException`) | `503` | Service unavailable |
 | Anything else, including other database errors | `500` | Internal server error |
 
-Details are fixed strings, so internal exception messages, SQL and stack traces never reach clients. `503` and `500` are logged with the exception; validation failures are not logged. Spring Boot's own error page, used for errors outside controllers, is still configured never to include stack traces, exception class names or messages.
+Details are fixed strings, and conversion errors say only `has an invalid value`, so internal exception messages, SQL and stack traces never reach clients. `503` and `500` are logged with the exception; validation failures are not logged. Spring Boot's own error page, used for errors outside controllers, is still configured never to include stack traces, exception class names or messages.

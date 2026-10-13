@@ -4,10 +4,13 @@ import com.tracelite.common.web.FieldViolation;
 import com.tracelite.common.web.RequestSizeLimitFilter;
 import com.tracelite.common.web.RequestTooLargeException;
 import com.tracelite.event.application.InvalidErrorEventException;
+import com.tracelite.issue.application.InvalidIssueQueryException;
+import com.tracelite.issue.application.IssueNotFoundException;
 import java.util.Comparator;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpHeaders;
@@ -17,6 +20,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -29,6 +33,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private static final String ERRORS_PROPERTY = "errors";
+    private static final String INVALID_VALUE_MESSAGE = "has an invalid value";
 
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -37,10 +42,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatusCode status,
             WebRequest request) {
         List<FieldViolation> violations = exception.getBindingResult().getFieldErrors().stream()
-                .map(error -> new FieldViolation(error.getField(), error.getDefaultMessage()))
+                .map(GlobalExceptionHandler::toFieldViolation)
                 .sorted(Comparator.comparing(FieldViolation::field).thenComparing(FieldViolation::message))
                 .toList();
         return ResponseEntity.badRequest().body(invalidRequestProblem(violations));
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleTypeMismatch(
+            TypeMismatchException exception,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+        FieldViolation violation = new FieldViolation(exception.getPropertyName(), INVALID_VALUE_MESSAGE);
+        return ResponseEntity.badRequest().body(invalidRequestProblem(List.of(violation)));
     }
 
     @Override
@@ -64,6 +79,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return invalidRequestProblem(List.of(new FieldViolation(exception.getField(), exception.getReason())));
     }
 
+    @ExceptionHandler(InvalidIssueQueryException.class)
+    ProblemDetail handleInvalidIssueQuery(InvalidIssueQueryException exception) {
+        return invalidRequestProblem(List.of(new FieldViolation(exception.getField(), exception.getReason())));
+    }
+
+    @ExceptionHandler(IssueNotFoundException.class)
+    ProblemDetail handleIssueNotFound(IssueNotFoundException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "No issue exists with this ID.");
+        problem.setTitle("Issue not found");
+        return problem;
+    }
+
     @ExceptionHandler({
             CannotCreateTransactionException.class,
             DataAccessResourceFailureException.class,
@@ -83,6 +110,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
         problem.setTitle("Internal server error");
         return problem;
+    }
+
+    private static FieldViolation toFieldViolation(FieldError error) {
+        String message = error.isBindingFailure() ? INVALID_VALUE_MESSAGE : error.getDefaultMessage();
+        return new FieldViolation(error.getField(), message);
     }
 
     private static ProblemDetail invalidRequestProblem(List<FieldViolation> violations) {

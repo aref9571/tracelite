@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: error ingestion and issue grouping work; issue management and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. See the status column below.
+> **Status: error ingestion, issue grouping and issue listing work; event history, the resolve and reopen API, authentication and the dashboard are not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID. See the status column below.
 
 ## The problem
 
@@ -22,7 +22,7 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 |---|---|
 | Error event ingestion (`POST /api/v1/events`) with validation and request-size limits | Implemented |
 | Deterministic fingerprinting and issue grouping ([ADR 0002](docs/decisions/0002-issue-fingerprinting.md)) | Implemented |
-| Issue listing, filtering, search, and pagination | Planned |
+| Issue listing, filtering, search, sorting and pagination (`GET /api/v1/issues`), and issue details (`GET /api/v1/issues/{id}`) | Implemented |
 | Paginated event history per issue | Planned |
 | Issue resolve / reopen lifecycle | Domain rules, schema and automatic reopen on a new event implemented; API planned |
 | Issue occurrence statistics | Planned |
@@ -30,7 +30,7 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | PostgreSQL schema for issues and events, with constraints and indexes | Implemented |
 | Consistent RFC 9457 error responses without internal details | Implemented |
 | Health, liveness and readiness endpoints | Implemented |
-| OpenAPI documentation | Planned |
+| OpenAPI documentation (`/v3/api-docs`, Swagger UI at `/swagger-ui.html`) | Implemented |
 | React/TypeScript investigation dashboard | Planned |
 | Docker Compose PostgreSQL for local development | Implemented |
 | GitHub Actions CI: build, Testcontainers tests, Compose smoke test | Implemented |
@@ -39,7 +39,8 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 ## Technology stack
 
 - **Backend:** Java 21, Spring Boot 3.5, Maven (with Maven Wrapper)
-- **Persistence:** PostgreSQL 17, Flyway, Spring Data JPA (Hibernate)
+- **Persistence:** PostgreSQL 17 (with `pg_trgm` for text search), Flyway, Spring Data JPA (Hibernate)
+- **API documentation:** springdoc-openapi (OpenAPI 3, Swagger UI)
 - **Testing:** JUnit 5, AssertJ, Mockito, MockMvc, Spring Boot Test, Testcontainers; JaCoCo planned
 - **Infrastructure:** Docker Compose, GitHub Actions; backend Dockerfile planned
 - **Frontend (planned):** React, TypeScript, Vite
@@ -85,6 +86,15 @@ Send a test event (see [docs/api.md](docs/api.md) for every field and response):
 curl -i http://localhost:8080/api/v1/events -H 'Content-Type: application/json' \
   -d '{"application":"demo","environment":"local","exceptionType":"java.lang.IllegalStateException","occurredAt":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
 ```
+
+List the issues, newest first, and filter them:
+
+```bash
+curl 'http://localhost:8080/api/v1/issues'
+curl 'http://localhost:8080/api/v1/issues?status=UNRESOLVED&environment=local&query=illegalstate'
+```
+
+Browse every endpoint in Swagger UI at <http://localhost:8080/swagger-ui.html>.
 
 On Windows use `mvnw.cmd` instead of `./mvnw`. [docs/development.md](docs/development.md) has the full setup, configuration reference and troubleshooting.
 

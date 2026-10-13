@@ -54,7 +54,9 @@ set -a; . ./.env; set +a
 java -jar backend/target/tracelite-backend.jar --spring.profiles.active=local
 ```
 
-On startup Flyway applies any pending migrations from `backend/src/main/resources/db/migration`. Migration `V1` creates the `issues` and `events` tables; see [database.md](database.md).
+On startup Flyway applies any pending migrations from `backend/src/main/resources/db/migration`. Migration `V1` creates the `issues` and `events` tables and `V2` adds the issue search indexes; see [database.md](database.md).
+
+With the backend running, the OpenAPI document is at <http://localhost:8080/v3/api-docs> and Swagger UI at <http://localhost:8080/swagger-ui.html>.
 
 Stop the application with `Ctrl+C`. It shuts down gracefully: in-flight requests get up to 20 seconds to complete.
 
@@ -87,6 +89,8 @@ Readiness returns HTTP 503 when the database is unreachable. In the default prof
 | `TRACELITE_INGESTION_MAX_REQUEST_SIZE` | `256KB` | no | Largest accepted body for `/api/**` requests; larger bodies get `413` |
 | `TRACELITE_INGESTION_MAX_CLOCK_SKEW` | `5m` | no | How far after the server's time an event's `occurredAt` may be |
 | `TRACELITE_INGESTION_MAX_EVENT_AGE` | `30d` | no | How far before the server's time an event's `occurredAt` may be |
+| `SPRINGDOC_API_DOCS_ENABLED` | `true` | no | Serve the OpenAPI document at `/v3/api-docs` |
+| `SPRINGDOC_SWAGGER_UI_ENABLED` | `true` | no | Serve Swagger UI at `/swagger-ui.html` (needs the OpenAPI document) |
 
 The `SPRING_DATASOURCE_*` names are Spring Boot's standard environment-variable mapping for `spring.datasource.*`, so no custom placeholders are involved. The `TRACELITE_INGESTION_*` variables map to `tracelite.ingestion.*` in `application.yml` the same way; sizes use Spring's `DataSize` format (`256KB`) and durations its `Duration` format (`5m`, `30d`).
 
