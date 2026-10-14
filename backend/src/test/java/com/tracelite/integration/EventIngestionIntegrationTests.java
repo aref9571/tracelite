@@ -13,45 +13,16 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.Import;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
-@Import(PostgresTestcontainersConfiguration.class)
-class EventIngestionIntegrationTests {
-
-    private static final String EVENTS_PATH = "/api/v1/events";
-    private static final ParameterizedTypeReference<Map<String, Object>> JSON_OBJECT =
-            new ParameterizedTypeReference<>() {
-            };
-
-    @Autowired
-    private TestRestTemplate restTemplate;
-
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+class EventIngestionIntegrationTests extends ApiIntegrationTestSupport {
 
     @LocalServerPort
     private int port;
-
-    @BeforeEach
-    void deleteStoredData() {
-        jdbcTemplate.execute("TRUNCATE issues CASCADE");
-    }
 
     @Test
     void storesAValidEventAndCreatesAnIssue() {
@@ -217,32 +188,5 @@ class EventIngestionIntegrationTests {
         assertThat(response.statusCode()).isEqualTo(413);
         assertThat(response.body()).contains("Request too large");
         assertNothingStored();
-    }
-
-    private void assertNothingStored() {
-        assertThat(jdbcTemplate.queryForObject("select count(*) from issues", Long.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject("select count(*) from events", Long.class)).isZero();
-    }
-
-    private ResponseEntity<Map<String, Object>> postEvent(String json) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set(TestApiKeys.HEADER, TestApiKeys.CHECKOUT_INGESTION_KEY);
-        return restTemplate.exchange(EVENTS_PATH, HttpMethod.POST, new HttpEntity<>(json, headers), JSON_OBJECT);
-    }
-
-    static String event(String environment, String exceptionType, Instant occurredAt) {
-        return """
-                {
-                  "application": "checkout-service",
-                  "environment": "%s",
-                  "exceptionType": "%s",
-                  "message": "Cart is empty",
-                  "stackTrace": "%s: Cart is empty\\n\\tat com.example.Cart.checkout(Cart.java:42)",
-                  "occurredAt": "%s",
-                  "correlationId": "req-7f3a",
-                  "context": {"orderId": "o-1001"}
-                }
-                """.formatted(environment, exceptionType, exceptionType, occurredAt);
     }
 }

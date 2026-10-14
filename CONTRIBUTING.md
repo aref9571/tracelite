@@ -46,3 +46,4 @@ chore: initialize project structure
 - Test HTTP behaviour through MockMvc.
 - Test PostgreSQL-dependent behaviour against a real database with Testcontainers.
 - Do not disable or weaken tests to obtain a passing build.
+- Keep coverage above the floors checked by `./mvnw verify` with tests that check behaviour, not by excluding code. See [docs/testing.md](docs/testing.md#coverage).

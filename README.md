@@ -41,7 +41,7 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 - **Backend:** Java 21, Spring Boot 3.5, Spring Security, Maven (with Maven Wrapper)
 - **Persistence:** PostgreSQL 17 (with `pg_trgm` for text search), Flyway, Spring Data JPA (Hibernate)
 - **API documentation:** springdoc-openapi (OpenAPI 3, Swagger UI)
-- **Testing:** JUnit 5, AssertJ, Mockito, MockMvc, Spring Boot Test, Testcontainers; JaCoCo planned
+- **Testing:** JUnit 5, AssertJ, Mockito, MockMvc, Spring Boot Test, Testcontainers, JaCoCo coverage reports
 - **Infrastructure:** Docker Compose, GitHub Actions; backend Dockerfile planned
 - **Frontend (planned):** React, TypeScript, Vite
 

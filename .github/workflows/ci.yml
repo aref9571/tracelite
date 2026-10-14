@@ -33,6 +33,18 @@ jobs:
         if: always()
         run: scripts/ci/summarize-tests.sh backend/target/surefire-reports
 
+      - name: Summarize coverage
+        if: always()
+        run: scripts/ci/summarize-coverage.sh backend/target/site/jacoco/jacoco.csv
+
+      - name: Upload coverage report
+        if: always() && hashFiles('backend/target/site/jacoco/index.html') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: backend/target/site/jacoco
+          retention-days: 14
+
       - name: Annotate build and test failures
         if: failure()
         run: scripts/ci/annotate-failures.sh build.log backend/target/surefire-reports

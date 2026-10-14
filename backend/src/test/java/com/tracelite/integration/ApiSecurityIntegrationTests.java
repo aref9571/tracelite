@@ -5,49 +5,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.tracelite.security.TestApiKeys;
 import java.time.Instant;
 import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Import;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 
-@SpringBootTest(
-        webEnvironment = WebEnvironment.RANDOM_PORT,
-        properties = {"logging.level.com.tracelite=DEBUG", "logging.level.org.springframework.security=TRACE"})
-@Import(PostgresTestcontainersConfiguration.class)
+@TestPropertySource(properties = {
+        "logging.level.com.tracelite=DEBUG", "logging.level.org.springframework.security=TRACE"})
 @ExtendWith(OutputCaptureExtension.class)
-class ApiSecurityIntegrationTests {
+class ApiSecurityIntegrationTests extends ApiIntegrationTestSupport {
 
-    private static final ParameterizedTypeReference<Map<String, Object>> JSON_OBJECT =
-            new ParameterizedTypeReference<>() {
-            };
     private static final String UNKNOWN_KEY = "unknown-key-0123456789abcdef0123456789";
-
-    @Autowired
-    private TestRestTemplate restTemplate;
-
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
-
-    @BeforeEach
-    void deleteStoredData() {
-        jdbcTemplate.execute("TRUNCATE issues CASCADE");
-    }
 
     @Test
     void ingestionKeyStoresEventsAndManagementKeyReadsAndResolvesThem() {
@@ -73,8 +50,7 @@ class ApiSecurityIntegrationTests {
         assertThat(postEvent("checkout-service", TestApiKeys.BILLING_INGESTION_KEY).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
 
-        assertThat(jdbcTemplate.queryForObject("select count(*) from issues", Long.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject("select count(*) from events", Long.class)).isZero();
+        assertNothingStored();
     }
 
     @Test
@@ -95,7 +71,7 @@ class ApiSecurityIntegrationTests {
         String body = "{\"message\":\"" + "x".repeat(300 * 1024) + "\"}";
 
         ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                "/api/v1/events", HttpMethod.POST, new HttpEntity<>(body, headers), JSON_OBJECT);
+                EVENTS_PATH, HttpMethod.POST, new HttpEntity<>(body, headers), JSON_OBJECT);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
@@ -136,23 +112,11 @@ class ApiSecurityIntegrationTests {
     }
 
     private ResponseEntity<Map<String, Object>> postEvent(String application, String apiKey) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        if (apiKey != null) {
-            headers.set(TestApiKeys.HEADER, apiKey);
-        }
-        Map<String, Object> event = Map.of(
+        return postEvent(Map.of(
                 "application", application,
                 "environment", "production",
                 "exceptionType", "java.lang.IllegalStateException",
                 "message", "Cart is empty",
-                "occurredAt", Instant.now().minusSeconds(5).toString());
-        return restTemplate.exchange("/api/v1/events", HttpMethod.POST, new HttpEntity<>(event, headers), JSON_OBJECT);
-    }
-
-    private ResponseEntity<Map<String, Object>> exchange(HttpMethod method, String path, String apiKey) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(TestApiKeys.HEADER, apiKey);
-        return restTemplate.exchange(path, method, new HttpEntity<>(headers), JSON_OBJECT);
+                "occurredAt", Instant.now().minusSeconds(5).toString()), apiKey);
     }
 }

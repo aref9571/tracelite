@@ -165,6 +165,18 @@ class EventIngestionServiceTest {
         verifyNoInteractions(issueRepository, errorEventRepository);
     }
 
+    @Test
+    void acceptsNestedListsAndMapsInContextWithoutNullCharacters() {
+        Map<String, Object> context = Map.of("items", List.of(Map.of("sku", "a-1"), "gift-card", 3));
+        ErrorEventSubmission submission = new ErrorEventSubmission("checkout-service", "production", EXCEPTION_TYPE,
+                null, null, NOW, null, context);
+
+        ErrorEvent event = service.ingest(submission);
+
+        assertThat(event.getContext()).isEqualTo(context);
+        verify(errorEventRepository).save(any(ErrorEvent.class));
+    }
+
     private static ErrorEventSubmission submission(Instant occurredAt) {
         return new ErrorEventSubmission(
                 "checkout-service",

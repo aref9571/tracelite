@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- JaCoCo coverage report on `./mvnw verify`, with a check that fails the build below 90% line or 85% branch coverage; CI publishes the coverage as a notice and uploads the HTML report.
+- Tests for simultaneous events on a resolved issue, resolve requests during ingestion, byte-by-byte reads and character encodings in the request size limit, nested context values, and the warning logged when no API keys are configured.
+- Testing documentation for coverage rules, uncovered code and transaction boundaries.
 - API-key authentication with Spring Security ([ADR 0005](docs/decisions/0005-api-key-authentication.md)): per-application ingestion keys for `POST /api/v1/events`, which may only submit events for their own application, and a management key for every `/api/v1/issues` endpoint, both sent in the `X-API-Key` header and configured through `TRACELITE_SECURITY_*` environment variables.
 - Keys are validated at startup, kept only as SHA-256 hashes and compared in constant time; missing, malformed and unknown keys get `401` with `WWW-Authenticate`, a key on the wrong endpoint or for another application gets `403`, both as problem details that never repeat the key. Without keys, every API call is rejected and a warning is logged.
 - CORS for browser clients, limited to origins listed in `TRACELITE_SECURITY_ALLOWEDORIGINS` (none by default).
@@ -55,5 +58,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- HTTP integration tests share one support class for setup, authenticated requests and simultaneous requests instead of repeating them in each class.
 - All `/api/v1` endpoints now require an API key. Actuator endpoints other than `health` and `info`, which were already unexposed, now get `401` or `403` instead of `404`, and `OPTIONS /api/v1/events` needs an ingestion key.
 - The backend uses Spring Data JPA instead of plain JDBC; Hibernate validates the entity mapping against the Flyway schema on startup and open-in-view is disabled.
