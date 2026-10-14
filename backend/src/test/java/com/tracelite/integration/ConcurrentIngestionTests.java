@@ -2,6 +2,7 @@ package com.tracelite.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tracelite.security.TestApiKeys;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,6 +106,7 @@ class ConcurrentIngestionTests {
     private ResponseEntity<Map<String, Object>> post(String json) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set(TestApiKeys.HEADER, TestApiKeys.CHECKOUT_INGESTION_KEY);
         return restTemplate.exchange("/api/v1/events", HttpMethod.POST, new HttpEntity<>(json, headers), JSON_OBJECT);
     }
 }

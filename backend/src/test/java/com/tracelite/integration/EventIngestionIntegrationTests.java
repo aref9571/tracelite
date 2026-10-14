@@ -2,6 +2,7 @@ package com.tracelite.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tracelite.security.TestApiKeys;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -204,6 +205,7 @@ class EventIngestionIntegrationTests {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + EVENTS_PATH))
                 .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .header(TestApiKeys.HEADER, TestApiKeys.CHECKOUT_INGESTION_KEY)
                 .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new ByteArrayInputStream(bytes)))
                 .build();
 
@@ -225,6 +227,7 @@ class EventIngestionIntegrationTests {
     private ResponseEntity<Map<String, Object>> postEvent(String json) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set(TestApiKeys.HEADER, TestApiKeys.CHECKOUT_INGESTION_KEY);
         return restTemplate.exchange(EVENTS_PATH, HttpMethod.POST, new HttpEntity<>(json, headers), JSON_OBJECT);
     }
 

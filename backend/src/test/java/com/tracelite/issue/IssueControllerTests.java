@@ -27,6 +27,8 @@ import com.tracelite.issue.application.IssueSortField;
 import com.tracelite.issue.domain.InvalidIssueStatusTransitionException;
 import com.tracelite.issue.domain.Issue;
 import com.tracelite.issue.domain.IssueStatus;
+import com.tracelite.security.SecurityConfiguration;
+import com.tracelite.security.TestApiKeys;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -47,7 +49,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(IssueController.class)
-@Import(IngestionConfiguration.class)
+@Import({IngestionConfiguration.class, SecurityConfiguration.class})
 class IssueControllerTests {
 
     private static final String ISSUES_PATH = "/api/v1/issues";
@@ -68,7 +70,7 @@ class IssueControllerTests {
         when(issueQueryService.search(any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(new PageImpl<>(List.of(storedIssue()), PageRequest.of(0, 20), 1));
 
-        mockMvc.perform(get(ISSUES_PATH))
+        mockMvc.perform(get(ISSUES_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.items.length()").value(1))
@@ -102,7 +104,7 @@ class IssueControllerTests {
         when(issueQueryService.search(any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(2, 5), 11));
 
-        mockMvc.perform(get(ISSUES_PATH)
+        mockMvc.perform(get(ISSUES_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY)
                         .param("status", "RESOLVED")
                         .param("environment", "production")
                         .param("lastSeenFrom", "2026-10-01T00:00:00Z")
@@ -147,7 +149,7 @@ class IssueControllerTests {
             environment  | ''                    | must contain only letters, digits, '.', '_', ':' or '-'
             """)
     void rejectsAnInvalidQueryParameter(String parameter, String value, String message) throws Exception {
-        mockMvc.perform(get(ISSUES_PATH).param(parameter, value))
+        mockMvc.perform(get(ISSUES_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY).param(parameter, value))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Invalid request"))
@@ -162,7 +164,7 @@ class IssueControllerTests {
 
     @Test
     void rejectsAnOverlongEnvironmentOrSearchText() throws Exception {
-        mockMvc.perform(get(ISSUES_PATH)
+        mockMvc.perform(get(ISSUES_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY)
                         .param("environment", "e".repeat(Issue.MAX_ENVIRONMENT_LENGTH + 1))
                         .param("query", "q".repeat(201)))
                 .andExpect(status().isBadRequest())
@@ -177,7 +179,7 @@ class IssueControllerTests {
 
     @Test
     void rejectsSearchTextWithANullCharacter() throws Exception {
-        mockMvc.perform(get(ISSUES_PATH).param("query", "bad\u0000text"))
+        mockMvc.perform(get(ISSUES_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY).param("query", "bad\u0000text"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("query"))
                 .andExpect(jsonPath("$.errors[0].message").value("must not contain null characters"));
@@ -190,7 +192,7 @@ class IssueControllerTests {
         when(issueQueryService.search(any(), any(), any(), anyInt(), anyInt()))
                 .thenThrow(new InvalidIssueQueryException("lastSeenTo", "must be after lastSeenFrom"));
 
-        mockMvc.perform(get(ISSUES_PATH)
+        mockMvc.perform(get(ISSUES_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY)
                         .param("lastSeenFrom", "2026-10-02T00:00:00Z")
                         .param("lastSeenTo", "2026-10-01T00:00:00Z"))
                 .andExpect(status().isBadRequest())
@@ -205,7 +207,7 @@ class IssueControllerTests {
         issue.resolve(FIRST_SEEN.plusSeconds(60));
         when(issueQueryService.getIssue(ISSUE_ID)).thenReturn(issue);
 
-        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID))
+        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(ISSUE_ID.toString()))
@@ -217,7 +219,7 @@ class IssueControllerTests {
     void returnsNotFoundForAnUnknownIssue() throws Exception {
         when(issueQueryService.getIssue(ISSUE_ID)).thenThrow(new IssueNotFoundException(ISSUE_ID));
 
-        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID))
+        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Issue not found"))
@@ -228,7 +230,7 @@ class IssueControllerTests {
 
     @Test
     void rejectsAnIssueIdThatIsNotAUuid() throws Exception {
-        mockMvc.perform(get(ISSUES_PATH + "/not-a-uuid"))
+        mockMvc.perform(get(ISSUES_PATH + "/not-a-uuid").header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Invalid request"))
@@ -246,7 +248,7 @@ class IssueControllerTests {
         issue.resolve(FIRST_SEEN.plusSeconds(90));
         when(issueLifecycleService.resolve(ISSUE_ID)).thenReturn(issue);
 
-        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/resolve"))
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/resolve").header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(ISSUE_ID.toString()))
@@ -258,7 +260,7 @@ class IssueControllerTests {
     void reopensAnIssue() throws Exception {
         when(issueLifecycleService.reopen(ISSUE_ID)).thenReturn(storedIssue());
 
-        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/reopen"))
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/reopen").header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(ISSUE_ID.toString()))
                 .andExpect(jsonPath("$.status").value("UNRESOLVED"))
@@ -275,7 +277,7 @@ class IssueControllerTests {
         when(issueLifecycleService.resolve(ISSUE_ID)).thenThrow(conflict);
         when(issueLifecycleService.reopen(ISSUE_ID)).thenThrow(conflict);
 
-        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/" + action))
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/" + action).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Invalid status transition"))
@@ -291,7 +293,7 @@ class IssueControllerTests {
         when(issueLifecycleService.resolve(ISSUE_ID))
                 .thenThrow(new ObjectOptimisticLockingFailureException(Issue.class, ISSUE_ID));
 
-        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/resolve"))
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/resolve").header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Concurrent modification"))
@@ -307,7 +309,7 @@ class IssueControllerTests {
         when(issueLifecycleService.resolve(ISSUE_ID)).thenThrow(new IssueNotFoundException(ISSUE_ID));
         when(issueLifecycleService.reopen(ISSUE_ID)).thenThrow(new IssueNotFoundException(ISSUE_ID));
 
-        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/" + action))
+        mockMvc.perform(post(ISSUES_PATH + "/" + ISSUE_ID + "/" + action).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.title").value("Issue not found"));
     }
@@ -315,7 +317,7 @@ class IssueControllerTests {
     @ParameterizedTest
     @CsvSource({"resolve", "reopen"})
     void rejectsALifecycleChangeForAnIdThatIsNotAUuid(String action) throws Exception {
-        mockMvc.perform(post(ISSUES_PATH + "/not-a-uuid/" + action))
+        mockMvc.perform(post(ISSUES_PATH + "/not-a-uuid/" + action).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("id"))
                 .andExpect(jsonPath("$.errors[0].message").value("has an invalid value"));
@@ -325,7 +327,7 @@ class IssueControllerTests {
 
     @Test
     void rejectsGetOnALifecycleEndpoint() throws Exception {
-        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID + "/resolve"))
+        mockMvc.perform(get(ISSUES_PATH + "/" + ISSUE_ID + "/resolve").header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isMethodNotAllowed());
 
         verifyNoInteractions(issueLifecycleService);

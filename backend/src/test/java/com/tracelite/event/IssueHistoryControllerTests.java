@@ -20,6 +20,8 @@ import com.tracelite.event.application.IssueStatistics.DailyEventCount;
 import com.tracelite.event.domain.ErrorEvent;
 import com.tracelite.issue.application.IssueNotFoundException;
 import com.tracelite.issue.domain.Issue;
+import com.tracelite.security.SecurityConfiguration;
+import com.tracelite.security.TestApiKeys;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -39,7 +41,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(IssueHistoryController.class)
-@Import(IngestionConfiguration.class)
+@Import({IngestionConfiguration.class, SecurityConfiguration.class})
 class IssueHistoryControllerTests {
 
     private static final UUID ISSUE_ID = UUID.fromString("5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b");
@@ -60,7 +62,7 @@ class IssueHistoryControllerTests {
         when(issueHistoryService.getEvents(ISSUE_ID, 0, 20))
                 .thenReturn(new PageImpl<>(List.of(storedEvent()), PageRequest.of(0, 20), 1));
 
-        mockMvc.perform(get(EVENTS_PATH))
+        mockMvc.perform(get(EVENTS_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.items.length()").value(1))
@@ -85,7 +87,7 @@ class IssueHistoryControllerTests {
         when(issueHistoryService.getEvents(ISSUE_ID, 3, 5))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(3, 5), 12));
 
-        mockMvc.perform(get(EVENTS_PATH).param("page", "3").param("size", "5"))
+        mockMvc.perform(get(EVENTS_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY).param("page", "3").param("size", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(0))
                 .andExpect(jsonPath("$.page").value(3))
@@ -106,7 +108,7 @@ class IssueHistoryControllerTests {
             size | many  | has an invalid value
             """)
     void rejectsAnInvalidPageParameter(String parameter, String value, String message) throws Exception {
-        mockMvc.perform(get(EVENTS_PATH).param(parameter, value))
+        mockMvc.perform(get(EVENTS_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY).param(parameter, value))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Invalid request"))
@@ -121,7 +123,7 @@ class IssueHistoryControllerTests {
     void returnsNotFoundForTheEventsOfAnUnknownIssue() throws Exception {
         when(issueHistoryService.getEvents(any(), anyInt(), anyInt())).thenThrow(new IssueNotFoundException(ISSUE_ID));
 
-        mockMvc.perform(get(EVENTS_PATH))
+        mockMvc.perform(get(EVENTS_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.title").value("Issue not found"));
     }
@@ -129,7 +131,7 @@ class IssueHistoryControllerTests {
     @ParameterizedTest
     @CsvSource({"events", "stats"})
     void rejectsAnIssueIdThatIsNotAUuid(String resource) throws Exception {
-        mockMvc.perform(get("/api/v1/issues/not-a-uuid/" + resource))
+        mockMvc.perform(get("/api/v1/issues/not-a-uuid/" + resource).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("id"))
                 .andExpect(jsonPath("$.errors[0].message").value("has an invalid value"));
@@ -152,7 +154,7 @@ class IssueHistoryControllerTests {
                         new DailyEventCount(LocalDate.parse("2026-10-12"), 0),
                         new DailyEventCount(LocalDate.parse("2026-10-13"), 2))));
 
-        mockMvc.perform(get(STATS_PATH))
+        mockMvc.perform(get(STATS_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.issueId").value(ISSUE_ID.toString()))
@@ -174,7 +176,7 @@ class IssueHistoryControllerTests {
     void returnsNotFoundForTheStatisticsOfAnUnknownIssue() throws Exception {
         when(issueHistoryService.getStatistics(ISSUE_ID)).thenThrow(new IssueNotFoundException(ISSUE_ID));
 
-        mockMvc.perform(get(STATS_PATH))
+        mockMvc.perform(get(STATS_PATH).header(TestApiKeys.HEADER, TestApiKeys.MANAGEMENT_KEY))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Issue not found"))

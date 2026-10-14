@@ -7,6 +7,8 @@ import com.tracelite.event.application.InvalidErrorEventException;
 import com.tracelite.issue.application.InvalidIssueQueryException;
 import com.tracelite.issue.application.IssueNotFoundException;
 import com.tracelite.issue.domain.InvalidIssueStatusTransitionException;
+import com.tracelite.security.ApplicationAccessDeniedException;
+import com.tracelite.security.SecurityProblemResponder;
 import java.util.Comparator;
 import java.util.List;
 import org.slf4j.Logger;
@@ -84,6 +86,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidIssueQueryException.class)
     ProblemDetail handleInvalidIssueQuery(InvalidIssueQueryException exception) {
         return invalidRequestProblem(List.of(new FieldViolation(exception.getField(), exception.getReason())));
+    }
+
+    @ExceptionHandler(ApplicationAccessDeniedException.class)
+    ProblemDetail handleApplicationAccessDenied(ApplicationAccessDeniedException exception) {
+        return SecurityProblemResponder.forbiddenProblem("The API key is not valid for this application.");
     }
 
     @ExceptionHandler(IssueNotFoundException.class)

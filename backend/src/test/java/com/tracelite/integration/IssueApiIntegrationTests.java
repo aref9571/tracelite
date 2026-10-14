@@ -2,6 +2,7 @@ package com.tracelite.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tracelite.security.TestApiKeys;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
@@ -116,6 +117,7 @@ class IssueApiIntegrationTests {
                 "occurredAt", Instant.now().minusSeconds(5).toString());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set(TestApiKeys.HEADER, TestApiKeys.CHECKOUT_INGESTION_KEY);
         ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                 "/api/v1/events", HttpMethod.POST, new HttpEntity<>(event, headers), JSON_OBJECT);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -123,7 +125,7 @@ class IssueApiIntegrationTests {
     }
 
     private ResponseEntity<Map<String, Object>> getJson(String path) {
-        return restTemplate.exchange(URI.create(path), HttpMethod.GET, null, JSON_OBJECT);
+        return restTemplate.exchange(URI.create(path), HttpMethod.GET, TestApiKeys.managementRequest(), JSON_OBJECT);
     }
 
     @SuppressWarnings("unchecked")

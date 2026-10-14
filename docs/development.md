@@ -22,6 +22,13 @@ Maven is not required: the Maven Wrapper (`./mvnw`) downloads Maven 3.9.11 on fi
 
    Or edit `.env` by hand. `.env` is git-ignored; never commit it.
 
+   Then add API keys, so you can call the API (see [security.md](security.md#api-keys)):
+
+   ```bash
+   sed -i.bak "s/^TRACELITE_SECURITY_MANAGEMENTKEY=.*/TRACELITE_SECURITY_MANAGEMENTKEY=$(openssl rand -hex 32)/" .env && rm .env.bak
+   printf 'TRACELITE_SECURITY_PROJECTS_0_APPLICATION=demo\nTRACELITE_SECURITY_PROJECTS_0_INGESTIONKEY=%s\n' "$(openssl rand -hex 32)" >> .env
+   ```
+
 2. Start PostgreSQL:
 
    ```bash
@@ -56,7 +63,7 @@ java -jar backend/target/tracelite-backend.jar --spring.profiles.active=local
 
 On startup Flyway applies any pending migrations from `backend/src/main/resources/db/migration`. Migration `V1` creates the `issues` and `events` tables and `V2` adds the issue search indexes; see [database.md](database.md).
 
-With the backend running, the OpenAPI document is at <http://localhost:8080/v3/api-docs> and Swagger UI at <http://localhost:8080/swagger-ui.html>.
+With the backend running, the OpenAPI document is at <http://localhost:8080/v3/api-docs> and Swagger UI at <http://localhost:8080/swagger-ui.html>. Both are public; to try a protected endpoint in Swagger UI, choose **Authorize** and enter a key. Without any keys configured the backend starts, logs `No API keys are configured, so every request to /api/** will be rejected`, and answers every API call with `401`.
 
 Stop the application with `Ctrl+C`. It shuts down gracefully: in-flight requests get up to 20 seconds to complete.
 
@@ -91,8 +98,12 @@ Readiness returns HTTP 503 when the database is unreachable. In the default prof
 | `TRACELITE_INGESTION_MAX_EVENT_AGE` | `30d` | no | How far before the server's time an event's `occurredAt` may be |
 | `SPRINGDOC_API_DOCS_ENABLED` | `true` | no | Serve the OpenAPI document at `/v3/api-docs` |
 | `SPRINGDOC_SWAGGER_UI_ENABLED` | `true` | no | Serve Swagger UI at `/swagger-ui.html` (needs the OpenAPI document) |
+| `TRACELITE_SECURITY_MANAGEMENTKEY` | — | for the issue endpoints | Management API key for every `/api/v1/issues/**` endpoint. Empty means no management access |
+| `TRACELITE_SECURITY_PROJECTS_<n>_APPLICATION` | — | for ingestion | Application name the `n`-th ingestion key belongs to (`n` = 0, 1, 2, ...); an application may appear more than once to allow key rotation |
+| `TRACELITE_SECURITY_PROJECTS_<n>_INGESTIONKEY` | — | for ingestion | Ingestion key for that application; required whenever the application is set |
+| `TRACELITE_SECURITY_ALLOWEDORIGINS` | none | no | Comma-separated browser origins allowed to call the API, e.g. `http://localhost:5173` |
 
-The `SPRING_DATASOURCE_*` names are Spring Boot's standard environment-variable mapping for `spring.datasource.*`, so no custom placeholders are involved. The `TRACELITE_INGESTION_*` variables map to `tracelite.ingestion.*` in `application.yml` the same way; sizes use Spring's `DataSize` format (`256KB`) and durations its `Duration` format (`5m`, `30d`).
+The `SPRING_DATASOURCE_*` names are Spring Boot's standard environment-variable mapping for `spring.datasource.*`, so no custom placeholders are involved. The `TRACELITE_INGESTION_*` and `TRACELITE_SECURITY_*` variables map to `tracelite.ingestion.*` and `tracelite.security.*` the same way (Spring drops the dashes, so `management-key` becomes `MANAGEMENTKEY`, and `projects[0].ingestion-key` becomes `PROJECTS_0_INGESTIONKEY`); sizes use Spring's `DataSize` format (`256KB`) and durations its `Duration` format (`5m`, `30d`).
 
 ### Missing configuration
 
@@ -101,6 +112,8 @@ The backend refuses to start without database settings. Starting it with no `SPR
 ```
 Failed to configure a DataSource: 'url' attribute is not specified and no embedded datasource could be configured.
 ```
+
+A malformed API key, such as one that is too short or contains spaces, also stops startup, with a message that names the property but not its value, for example `tracelite.security.management-key must be 32 to 128 letters, digits, '_' or '-'`. Two equal keys stop startup too.
 
 A wrong password fails at startup with PostgreSQL's `password authentication failed` error, because Flyway connects to the database before the application accepts traffic. Docker Compose refuses to start PostgreSQL without a password:
 
@@ -115,7 +128,7 @@ required variable SPRING_DATASOURCE_PASSWORD is missing a value: Set SPRING_DATA
 | default | Any deployed environment | Minimal health output, `INFO` logging |
 | `local` | Local development | Health component details, `DEBUG` logging for `com.tracelite` |
 
-Tests do not use a dedicated profile. Testcontainers provides the database connection through Spring Boot's `@ServiceConnection`.
+Tests do not use a dedicated profile. Testcontainers provides the database connection through Spring Boot's `@ServiceConnection`, and `backend/src/test/resources/config/application.yml` adds fixed test-only API keys, which Spring Boot loads in addition to the main `application.yml`. Those keys exist only in the test classpath and are never valid anywhere else.
 
 ## Logging
 
@@ -132,4 +145,4 @@ set -a; . ./.env; set +a
 scripts/development/smoke-test.sh
 ```
 
-It verifies that startup without database configuration, or with a wrong password, fails with the expected message, that the health, liveness and readiness endpoints report `UP`, and that `SIGTERM` produces a graceful shutdown. CI runs the same script.
+It needs the management key and the first ingestion key (`TRACELITE_SECURITY_PROJECTS_0_*`) in `.env`. It verifies that startup without database configuration, or with a wrong password, fails with the expected message, that the health, liveness and readiness endpoints report `UP`, that the API answers `401` without a key or with a wrong key, `403` when a key is used on the wrong endpoint, and `201` and `200` with the right keys, and that `SIGTERM` produces a graceful shutdown. The ingestion check stores one event with the environment `smoke-test`. CI runs the same script with freshly generated keys.

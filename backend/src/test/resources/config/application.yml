@@ -1,0 +1,8 @@
+tracelite:
+  security:
+    management-key: test-management-key-0123456789abcdef
+    projects:
+      - application: checkout-service
+        ingestion-key: test-checkout-ingestion-key-0123456789
+      - application: billing-service
+        ingestion-key: test-billing-ingestion-key-0123456789ab

@@ -4,11 +4,16 @@
 #   1. startup without database configuration fails with a clear message
 #   2. startup with a wrong database password fails
 #   3. startup with configuration succeeds and the health probes report UP
-#   4. SIGTERM triggers a graceful shutdown
+#   4. the API rejects missing and wrong API keys and accepts the configured ones
+#   5. SIGTERM triggers a graceful shutdown
 #
 # Usage: scripts/development/smoke-test.sh [path-to-jar]
-# Requires SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME and
-# SPRING_DATASOURCE_PASSWORD to be exported, e.g. set -a; . ./.env; set +a
+# Requires SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
+# SPRING_DATASOURCE_PASSWORD, TRACELITE_SECURITY_MANAGEMENTKEY,
+# TRACELITE_SECURITY_PROJECTS_0_APPLICATION and
+# TRACELITE_SECURITY_PROJECTS_0_INGESTIONKEY to be exported,
+# e.g. set -a; . ./.env; set +a
+# Step 4 stores one event with the environment "smoke-test".
 
 set -euo pipefail
 
@@ -34,7 +39,9 @@ trap cleanup EXIT
 require_environment() {
   [[ -f "${JAR}" ]] || fail "jar not found at ${JAR}; run ./mvnw verify first"
   local name
-  for name in SPRING_DATASOURCE_URL SPRING_DATASOURCE_USERNAME SPRING_DATASOURCE_PASSWORD; do
+  for name in SPRING_DATASOURCE_URL SPRING_DATASOURCE_USERNAME SPRING_DATASOURCE_PASSWORD \
+      TRACELITE_SECURITY_MANAGEMENTKEY TRACELITE_SECURITY_PROJECTS_0_APPLICATION \
+      TRACELITE_SECURITY_PROJECTS_0_INGESTIONKEY; do
     [[ -n "${!name:-}" ]] || fail "${name} is not set"
   done
 }
@@ -88,6 +95,40 @@ check_endpoint_up() {
   echo "OK: ${path} reports UP"
 }
 
+expect_status() {
+  local expected="$1" method="$2" path="$3" api_key="$4" body="${5:-}"
+  local args=(--silent --output /dev/null --write-out '%{http_code}' --request "${method}")
+  if [[ -n "${api_key}" ]]; then
+    args+=(--header "X-API-Key: ${api_key}")
+  fi
+  if [[ -n "${body}" ]]; then
+    args+=(--header 'Content-Type: application/json' --data "${body}")
+  fi
+  local actual
+  actual="$(curl "${args[@]}" "${BASE_URL}${path}")"
+  if [[ "${actual}" != "${expected}" ]]; then
+    fail "${method} ${path} returned ${actual}, expected ${expected}"
+  fi
+  echo "OK: ${method} ${path} returned ${expected}"
+}
+
+check_api_keys() {
+  local ingestion_key="${TRACELITE_SECURITY_PROJECTS_0_INGESTIONKEY}"
+  local management_key="${TRACELITE_SECURITY_MANAGEMENTKEY}"
+  local event
+  event="$(printf '{"application":"%s","environment":"smoke-test","exceptionType":"java.lang.IllegalStateException","occurredAt":"%s"}' \
+    "${TRACELITE_SECURITY_PROJECTS_0_APPLICATION}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+
+  echo "Checking API-key protection..."
+  expect_status 401 POST /api/v1/events "" "${event}"
+  expect_status 401 POST /api/v1/events "wrong-key-0123456789abcdef0123456789" "${event}"
+  expect_status 403 POST /api/v1/events "${management_key}" "${event}"
+  expect_status 201 POST /api/v1/events "${ingestion_key}" "${event}"
+  expect_status 401 GET /api/v1/issues ""
+  expect_status 403 GET /api/v1/issues "${ingestion_key}"
+  expect_status 200 GET /api/v1/issues "${management_key}"
+}
+
 check_startup_and_graceful_shutdown() {
   echo "Starting application..."
   java -jar "${JAR}" >"${LOG_DIR}/app.log" 2>&1 &
@@ -97,6 +138,7 @@ check_startup_and_graceful_shutdown() {
   check_endpoint_up /actuator/health
   check_endpoint_up /actuator/health/liveness
   check_endpoint_up /actuator/health/readiness
+  check_api_keys
 
   echo "Sending SIGTERM..."
   kill -TERM "${APP_PID}"

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.doThrow;
 
 import com.tracelite.event.domain.ErrorEvent;
 import com.tracelite.event.persistence.ErrorEventRepository;
+import com.tracelite.security.TestApiKeys;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +56,7 @@ class EventIngestionRollbackTests {
     private ResponseEntity<String> post(String json) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set(TestApiKeys.HEADER, TestApiKeys.CHECKOUT_INGESTION_KEY);
         return restTemplate.postForEntity("/api/v1/events", new HttpEntity<>(json, headers), String.class);
     }
 }

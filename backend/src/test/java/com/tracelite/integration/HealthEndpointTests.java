@@ -2,6 +2,7 @@ package com.tracelite.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tracelite.security.TestApiKeys;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -45,10 +46,13 @@ class HealthEndpointTests {
 
     @ParameterizedTest
     @ValueSource(strings = {"/actuator/env", "/actuator/configprops", "/actuator/beans", "/actuator/heapdump"})
-    void sensitiveActuatorEndpointsAreNotExposed(String path) {
-        ResponseEntity<String> response = restTemplate.getForEntity(path, String.class);
+    void sensitiveActuatorEndpointsAreNotReachable(String path) {
+        ResponseEntity<String> anonymous = restTemplate.getForEntity(path, String.class);
+        ResponseEntity<String> withManagementKey =
+                restTemplate.exchange(path, HttpMethod.GET, TestApiKeys.managementRequest(), String.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(anonymous.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(withManagementKey.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     private ResponseEntity<Map<String, Object>> getJson(String path) {

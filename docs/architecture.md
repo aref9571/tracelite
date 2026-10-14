@@ -101,14 +101,25 @@ Configuration comes from `application.yml`, overridden by environment variables 
 
 Liveness (`/actuator/health/liveness`) reflects only the application's internal state, so a database outage makes the instance not ready without making it look broken.
 
+## Authentication and access control
+
+Every request passes Spring Security's filter chain before any controller or the request-size filter ([ADR 0005](decisions/0005-api-key-authentication.md)):
+
+1. `ApiKeyAuthenticationFilter` (`security`) reads the `X-API-Key` header. When exactly one key is present, `ApiKeyRegistry` hashes it with SHA-256 and compares it in constant time with the hash of every configured key. A match sets the authentication: the management key gets the `MANAGE_ISSUES` authority, an ingestion key gets `INGEST_EVENTS` with an `IngestionClient` principal naming its application. A missing or unknown key leaves the request anonymous.
+2. The authorization rules in `SecurityConfiguration` then decide: health, info, the OpenAPI document and Swagger UI are public; `/api/v1/events` needs `INGEST_EVENTS`; `/api/v1/issues/**` needs `MANAGE_ISSUES`; anything else is denied. An anonymous request to a protected path gets `401`, an authenticated one without the authority `403`, both written by `SecurityProblemResponder` as problem details.
+3. CORS is handled before authentication, so a browser preflight from an origin in `tracelite.security.allowed-origins` succeeds without a key. With no origins configured, no CORS headers are sent.
+
+The chain is stateless: no session, cookie or CSRF token is created. Keys are read once at startup from `ApiSecurityProperties` (`tracelite.security.*`); only their hashes stay in memory, and the properties' `toString` redacts them.
+
 ## Event ingestion
 
 `POST /api/v1/events` is handled synchronously ([ADR 0003](decisions/0003-event-ingestion.md)):
 
-1. `RequestSizeLimitFilter` (`common.web`) rejects bodies over the configured limit with `413`.
-2. `EventIngestionController` (`event.api`) parses the JSON into `IngestEventRequest`, validates it with Bean Validation, and maps it to an `ErrorEventSubmission`.
-3. `EventIngestionService` (`event.application`) runs in one transaction. It takes `receivedAt` from the injected `Clock`, checks `occurredAt` against the allowed range and rejects null characters, asks `FingerprintGenerator` (`issue.application`) for the fingerprint, calls `IssueRepository.recordOccurrence`, which creates the issue or counts the occurrence in one `INSERT ... ON CONFLICT` statement and returns the issue ID, and saves the `ErrorEvent`.
-4. The controller returns `201` with the event ID, issue ID and `receivedAt` only after the transaction commits. If anything fails, the transaction rolls back and the client gets an error status, never `201`.
+1. The security filter chain rejects requests without a valid ingestion key (`401`, or `403` for the management key) before the body is read.
+2. `RequestSizeLimitFilter` (`common.web`) rejects bodies over the configured limit with `413`.
+3. `EventIngestionController` (`event.api`) parses the JSON into `IngestEventRequest`, validates it with Bean Validation, checks that its `application` is the one the ingestion key belongs to (`403` otherwise), and maps it to an `ErrorEventSubmission`.
+4. `EventIngestionService` (`event.application`) runs in one transaction. It takes `receivedAt` from the injected `Clock`, checks `occurredAt` against the allowed range and rejects null characters, asks `FingerprintGenerator` (`issue.application`) for the fingerprint, calls `IssueRepository.recordOccurrence`, which creates the issue or counts the occurrence in one `INSERT ... ON CONFLICT` statement and returns the issue ID, and saves the `ErrorEvent`.
+5. The controller returns `201` with the event ID, issue ID and `receivedAt` only after the transaction commits. If anything fails, the transaction rolls back and the client gets an error status, never `201`.
 
 `FingerprintGenerator` hashes the exception type and up to 30 normalised stack frames ([ADR 0002](decisions/0002-issue-fingerprinting.md)). It is a plain component with no state, so the algorithm can change without touching the ingestion flow. Limits live in `IngestionProperties` (`tracelite.ingestion.*`), and the clock is a bean so tests can fix the time.
 
@@ -147,6 +158,8 @@ Both methods run in read-only transactions with `REPEATABLE READ` isolation. In 
 | `IssueNotFoundException` | `404` | Issue not found |
 | `InvalidIssueStatusTransitionException` (resolving a resolved issue or reopening an unresolved one) | `409` | Invalid status transition, with `currentStatus` and `requestedStatus` |
 | Optimistic-locking failure (another request changed the row first) | `409` | Concurrent modification |
+| Missing, malformed or unknown API key on a protected path (written by `SecurityProblemResponder`, with `WWW-Authenticate`) | `401` | Unauthorized |
+| Valid API key on a path it may not use (`SecurityProblemResponder`), or an ingestion key used for another application (`ApplicationAccessDeniedException`) | `403` | Forbidden |
 | Missing, unparseable or wrongly typed body | `400` | Malformed request |
 | Body over the size limit | `413` | Request too large |
 | Database unreachable or transient database failure (`CannotCreateTransactionException`, `DataAccessResourceFailureException`, `TransientDataAccessException`) | `503` | Service unavailable |

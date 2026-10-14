@@ -1,6 +1,8 @@
 spring:
   application:
     name: tracelite
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     hikari:
       pool-name: tracelite-db

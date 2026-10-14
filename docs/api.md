@@ -2,19 +2,53 @@
 
 All endpoints are versioned under `/api/v1`. Requests and responses use JSON; errors use [RFC 9457 problem details](https://www.rfc-editor.org/rfc/rfc9457) (`application/problem+json`).
 
-Authentication is not implemented yet. API-key authentication for these endpoints is planned for Day 8.
+Every `/api/v1` endpoint needs an API key; see [Authentication](#authentication).
 
 ## Endpoints
 
-| Method | Path | Purpose | Status |
-|---|---|---|---|
-| `POST` | `/api/v1/events` | Ingest an error event | Implemented |
-| `GET` | `/api/v1/issues` | List, filter, and search issues | Implemented |
-| `GET` | `/api/v1/issues/{id}` | Retrieve issue details | Implemented |
-| `GET` | `/api/v1/issues/{id}/events` | Retrieve paginated events for an issue | Implemented |
-| `POST` | `/api/v1/issues/{id}/resolve` | Mark an issue as resolved | Implemented |
-| `POST` | `/api/v1/issues/{id}/reopen` | Reopen a resolved issue | Implemented |
-| `GET` | `/api/v1/issues/{id}/stats` | Retrieve occurrence statistics | Implemented |
+| Method | Path | Purpose | Key | Status |
+|---|---|---|---|---|
+| `POST` | `/api/v1/events` | Ingest an error event | Ingestion key of the event's application | Implemented |
+| `GET` | `/api/v1/issues` | List, filter, and search issues | Management key | Implemented |
+| `GET` | `/api/v1/issues/{id}` | Retrieve issue details | Management key | Implemented |
+| `GET` | `/api/v1/issues/{id}/events` | Retrieve paginated events for an issue | Management key | Implemented |
+| `POST` | `/api/v1/issues/{id}/resolve` | Mark an issue as resolved | Management key | Implemented |
+| `POST` | `/api/v1/issues/{id}/reopen` | Reopen a resolved issue | Management key | Implemented |
+| `GET` | `/api/v1/issues/{id}/stats` | Retrieve occurrence statistics | Management key | Implemented |
+
+## Authentication
+
+Send the key in the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: $TRACELITE_SECURITY_MANAGEMENTKEY" http://localhost:8080/api/v1/issues
+```
+
+There are two kinds of key, both configured by the operator ([security.md](security.md#api-keys), [ADR 0005](decisions/0005-api-key-authentication.md)):
+
+- An **ingestion key** belongs to one application. It can only call `POST /api/v1/events`, and only for events whose `application` is that application.
+- The **management key** can call every `/api/v1/issues` endpoint, and cannot submit events.
+
+The key is checked before anything else, including the request size and the body. These responses apply to every endpoint in this document:
+
+| Status | When |
+|---|---|
+| `401 Unauthorized` | No `X-API-Key` header, more than one, a value that is not 32 to 128 letters, digits, `_` or `-`, or a key that is not configured. The response has a `WWW-Authenticate: ApiKey header="X-API-Key"` header. All cases share one message |
+| `403 Forbidden` | A valid key on an endpoint it may not use, for example an ingestion key on `/api/v1/issues`, or an ingestion key used for an event of another application |
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "A valid API key is required in the X-API-Key header.",
+  "instance": "/api/v1/issues"
+}
+```
+
+A `403` has the title `Forbidden` and the detail `The API key does not permit this request.`, or `The API key is not valid for this application.` for an event of another application. Neither response ever repeats the key.
+
+Browsers can call the API from another origin only when that origin is configured in `TRACELITE_SECURITY_ALLOWEDORIGINS`. A preflight `OPTIONS` request from such an origin needs no key; the actual request still does.
 
 ## OpenAPI
 
@@ -23,7 +57,7 @@ The running backend publishes an OpenAPI 3 description of the implemented endpoi
 - `GET /v3/api-docs`: the OpenAPI document as JSON.
 - `GET /swagger-ui.html`: Swagger UI for browsing and trying the endpoints.
 
-Like the rest of the API, these are not authenticated yet; Day 8 decides how they are exposed.
+Both are public, because they describe the API without exposing any data, and can be turned off with `SPRINGDOC_API_DOCS_ENABLED=false` and `SPRINGDOC_SWAGGER_UI_ENABLED=false`. The document declares the `X-API-Key` header as the security scheme, so Swagger UI's **Authorize** button sends a key with every request.
 
 ## `POST /api/v1/events`
 
@@ -126,7 +160,8 @@ Other responses, all with a problem-details body:
 
 | Status | When |
 |---|---|
-| `405 Method Not Allowed` | Any method other than `POST` or `OPTIONS` (`OPTIONS` returns `200` with an `Allow: POST,OPTIONS` header) |
+| `401 Unauthorized`, `403 Forbidden` | The API key is missing, wrong, or belongs to another application or to management; see [Authentication](#authentication). Nothing is stored |
+| `405 Method Not Allowed` | With a valid ingestion key, any method other than `POST` or `OPTIONS` (`OPTIONS` returns `200` with an `Allow: POST,OPTIONS` header) |
 | `413 Payload Too Large` | The body is larger than 256 KiB. A declared `Content-Length` is checked before reading; a chunked body is rejected as soon as the limit is passed |
 | `415 Unsupported Media Type` | `Content-Type` is not `application/json` |
 | `500 Internal Server Error` | An unexpected failure, including a database error. Nothing is stored. The body says only "An unexpected error occurred." |
@@ -137,6 +172,7 @@ Other responses, all with a problem-details body:
 ```bash
 curl -i http://localhost:8080/api/v1/events \
   -H 'Content-Type: application/json' \
+  -H "X-API-Key: $CHECKOUT_SERVICE_INGESTION_KEY" \
   -d '{
     "application": "checkout-service",
     "environment": "local",
@@ -216,7 +252,8 @@ Sorting is deterministic: after the chosen field, issues are ordered by ID (asce
 ### Example
 
 ```bash
-curl 'http://localhost:8080/api/v1/issues?status=UNRESOLVED&environment=production&query=timeout&size=10'
+curl -H "X-API-Key: $TRACELITE_SECURITY_MANAGEMENTKEY" \
+  'http://localhost:8080/api/v1/issues?status=UNRESOLVED&environment=production&query=timeout&size=10'
 ```
 
 ## `GET /api/v1/issues/{id}`
@@ -324,7 +361,8 @@ When two requests change the same issue at the same time, or a new event reopens
 | `409 Conflict` | The issue is already in the requested status, or another change won a race |
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/issues/5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b/resolve
+curl -X POST -H "X-API-Key: $TRACELITE_SECURITY_MANAGEMENTKEY" \
+  http://localhost:8080/api/v1/issues/5b1f7c9e-3f4a-4d2b-9a61-0c8e2f3d4a5b/resolve
 ```
 
 ## `GET /api/v1/issues/{id}/stats`
@@ -367,4 +405,4 @@ All windows use the server's `receivedAt`, like the issue list, and every value 
 
 ## Error format
 
-Every error response from `/api/v1` uses the same problem-details shape: `type`, `title`, `status`, `detail` and `instance`, plus `errors` for field validation failures. Responses never include stack traces, exception class names, SQL, or internal host names. Unexpected errors are logged on the server with their stack trace.
+Every error response from `/api/v1`, including the `401` and `403` authentication responses, uses the same problem-details shape: `type`, `title`, `status`, `detail` and `instance`, plus `errors` for field validation failures. Responses never include stack traces, exception class names, SQL, or internal host names. Unexpected errors are logged on the server with their stack trace.
