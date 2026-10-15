@@ -47,6 +47,38 @@ Maven is not required: the Maven Wrapper (`./mvnw`) downloads Maven 3.9.11 on fi
 
 ## Running the backend
 
+There are two ways to run the backend: as a container with Docker Compose, or from Maven or the packaged jar on your machine. Both use the same `.env`.
+
+### With Docker Compose
+
+```bash
+docker compose up --detach --wait
+```
+
+This builds the backend image from `backend/Dockerfile` on first use, starts PostgreSQL, waits until it is healthy, then starts the backend and waits until its readiness check passes. The backend is published on `127.0.0.1:8080` (`TRACELITE_BACKEND_PORT` changes the host port). Rebuild the image after changing the code with `docker compose up --detach --wait --build`.
+
+| Command | Effect |
+|---|---|
+| `docker compose ps` | Shows both services and their health |
+| `docker compose logs --follow backend` | Follows the backend log |
+| `docker compose stop backend` | Stops the backend gracefully (it gets 30 seconds before it is killed) |
+| `docker compose down` | Removes the containers; the database volume and its data are kept |
+| `docker compose down --volumes` | Removes the containers and deletes the database data |
+
+The backend container reads every variable in `.env` (`env_file`), except that Compose sets `SPRING_DATASOURCE_URL` to the `postgres` service and `SERVER_PORT` to `8080`, because inside the Compose network the database is not on `localhost`. To run only the database and start the backend from your IDE or Maven instead, use `docker compose up --detach --wait postgres`. Do not run both the container and a local backend on the same host port.
+
+The image:
+
+- is built in two stages: a JDK stage runs `./mvnw package -DskipTests` (the tests run in CI, not in the image build) and extracts the jar into Spring Boot's layers, and the runtime stage is `eclipse-temurin:21-jre-noble` with only those layers, so a code change rebuilds only the small application layer;
+- runs as the system user `tracelite`, not root, and the application files belong to root, so the process cannot modify them;
+- contains no configuration secrets: `.dockerignore` sends only the Maven Wrapper, the two `pom.xml` files and `backend/src/main` to the build, so `.env` can never be copied in, and every password and key is supplied when the container starts;
+- has a `HEALTHCHECK` on `/actuator/health/readiness`, which Compose uses for `--wait` and `docker compose ps`;
+- limits the JVM heap to 75% of the container's memory limit (`-XX:MaxRAMPercentage=75`).
+
+To build the image on its own: `docker build -f backend/Dockerfile -t tracelite-backend .` from the repository root.
+
+### With Maven or the jar
+
 Spring Boot does not read `.env`, so export its variables into your shell first:
 
 ```bash
@@ -92,7 +124,8 @@ Readiness returns HTTP 503 when the database is unreachable. In the default prof
 | `SPRING_DATASOURCE_USERNAME` | — (`tracelite` in Compose) | yes | Database user |
 | `SPRING_DATASOURCE_PASSWORD` | — | yes | Database password; also used by Compose to initialise PostgreSQL |
 | `TRACELITE_DB_PORT` | `5432` | no | Host port Compose publishes PostgreSQL on |
-| `SERVER_PORT` | `8080` | no | Backend HTTP port |
+| `SERVER_PORT` | `8080` | no | Backend HTTP port when run with Maven or the jar; the container always uses `8080` |
+| `TRACELITE_BACKEND_PORT` | `8080` | no | Host port Compose publishes the backend container on |
 | `TRACELITE_INGESTION_MAX_REQUEST_SIZE` | `256KB` | no | Largest accepted body for `/api/**` requests; larger bodies get `413` |
 | `TRACELITE_INGESTION_MAX_CLOCK_SKEW` | `5m` | no | How far after the server's time an event's `occurredAt` may be |
 | `TRACELITE_INGESTION_MAX_EVENT_AGE` | `30d` | no | How far before the server's time an event's `occurredAt` may be |
@@ -145,4 +178,15 @@ set -a; . ./.env; set +a
 scripts/development/smoke-test.sh
 ```
 
-It needs the management key and the first ingestion key (`TRACELITE_SECURITY_PROJECTS_0_*`) in `.env`. It verifies that startup without database configuration, or with a wrong password, fails with the expected message, that the health, liveness and readiness endpoints report `UP`, that the API answers `401` without a key or with a wrong key, `403` when a key is used on the wrong endpoint, and `201` and `200` with the right keys, and that `SIGTERM` produces a graceful shutdown. The ingestion check stores one event with the environment `smoke-test`. CI runs the same script with freshly generated keys.
+It needs the management key and the first ingestion key (`TRACELITE_SECURITY_PROJECTS_0_*`) in `.env`. Stop the backend container first (`docker compose stop backend`) if it is running, because the script starts the jar on the same port. It verifies that startup without database configuration, or with a wrong password, fails with the expected message, that the health, liveness and readiness endpoints report `UP`, that the API answers `401` without a key or with a wrong key, `403` when a key is used on the wrong endpoint, and `201` and `200` with the right keys, and that `SIGTERM` produces a graceful shutdown. The ingestion check stores one event with the environment `smoke-test`. CI runs the same script with freshly generated keys.
+
+## Docker stack test
+
+`scripts/development/docker-stack-test.sh` checks the image and the full Compose stack:
+
+```bash
+set -a; . ./.env; set +a
+scripts/development/docker-stack-test.sh
+```
+
+It starts both services and waits until they are healthy, then checks that the backend container does not run as root, that none of the configured secrets from `.env` appears in the image metadata or build history and that the image contains no `.env` file, that an event can be ingested and its issue read back, that `docker compose stop` produces a graceful shutdown, and that the issue is still there after `docker compose down` and a fresh start, which proves the data lives in the volume. It stores one event with the environment `docker-stack-test` and leaves the stack running. CI runs the same script with freshly generated keys.

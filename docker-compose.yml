@@ -19,5 +19,22 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: tracelite-backend
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/tracelite
+      SERVER_PORT: 8080
+    ports:
+      - "127.0.0.1:${TRACELITE_BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 30s
+    restart: unless-stopped
+
 volumes:
   postgres-data:

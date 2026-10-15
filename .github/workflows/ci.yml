@@ -9,6 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  static-checks:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Lint shell scripts
+        run: shellcheck scripts/development/*.sh scripts/ci/*.sh
+
+      - name: Lint Dockerfile
+        run: docker run --rm -i hadolint/hadolint:v2.14.0 < backend/Dockerfile
+
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm -v "${PWD}:/repo" --workdir /repo rhysd/actionlint:1.7.7 -color
+
   backend:
     name: Backend build and tests
     runs-on: ubuntu-latest
@@ -49,18 +66,8 @@ jobs:
         if: failure()
         run: scripts/ci/annotate-failures.sh build.log backend/target/surefire-reports
 
-      - name: Lint development scripts
-        run: shellcheck scripts/development/*.sh scripts/ci/*.sh
-
       - name: Create local environment file
-        run: |
-          cp .env.example .env
-          sed -i "s/^SPRING_DATASOURCE_PASSWORD=.*/SPRING_DATASOURCE_PASSWORD=$(openssl rand -hex 24)/" .env
-          sed -i "s/^TRACELITE_SECURITY_MANAGEMENTKEY=.*/TRACELITE_SECURITY_MANAGEMENTKEY=$(openssl rand -hex 32)/" .env
-          {
-            echo "TRACELITE_SECURITY_PROJECTS_0_APPLICATION=smoke-test-service"
-            echo "TRACELITE_SECURITY_PROJECTS_0_INGESTIONKEY=$(openssl rand -hex 32)"
-          } >> .env
+        run: scripts/ci/create-env-file.sh smoke-test-service
 
       - name: Validate Docker Compose configuration
         run: docker compose config --quiet
@@ -74,6 +81,38 @@ jobs:
           . ./.env
           set +a
           scripts/development/smoke-test.sh backend/target/tracelite-backend.jar
+
+      - name: Stop Docker Compose services
+        if: always() && hashFiles('.env') != ''
+        run: docker compose down --volumes
+
+  docker:
+    name: Docker image and Compose stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Create local environment file
+        run: scripts/ci/create-env-file.sh stack-test-service
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build backend image
+        run: docker compose build backend
+
+      - name: Test the Docker Compose stack
+        run: |
+          set -a
+          . ./.env
+          set +a
+          scripts/development/docker-stack-test.sh
+
+      - name: Show container logs
+        if: failure() && hashFiles('.env') != ''
+        run: docker compose logs
 
       - name: Stop Docker Compose services
         if: always() && hashFiles('.env') != ''

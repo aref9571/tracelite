@@ -12,7 +12,7 @@ See [docs/development.md](docs/development.md) for the full local setup.
 
 1. Create a branch from `main`.
 2. Make a focused change.
-3. Run `./mvnw verify` and make sure it passes.
+3. Run `./mvnw verify` and make sure it passes. If you changed the Dockerfile, Compose file or scripts, also run the Docker stack test and the static checks described in [docs/testing.md](docs/testing.md#continuous-integration).
 4. Update the README and the relevant files in `docs/` when behaviour changes.
 5. Open a pull request describing the change and how it was verified.
 

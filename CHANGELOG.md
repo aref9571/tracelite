@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Backend container image (`backend/Dockerfile`): a multi-stage build with the Maven Wrapper, Spring Boot layers on `eclipse-temurin:21-jre-noble`, a non-root user, a readiness `HEALTHCHECK` and no secrets in any layer; `.dockerignore` limits the build context to the build files and main sources.
+- `backend` service in `docker-compose.yml`: starts after PostgreSQL is healthy, reads `.env`, publishes on `127.0.0.1` (`TRACELITE_BACKEND_PORT`), stops gracefully and keeps the database in the named volume.
+- `scripts/development/docker-stack-test.sh`: checks the health of both services, the non-root user, that no configured secret or `.env` file is in the image, ingestion and read-back through the container, graceful stop, and that data survives a restart of the stack.
+- CI: a static-checks job (shellcheck, hadolint, actionlint) and a job that builds the image from a clean checkout and runs the Docker stack test; the `.env` generation moved to `scripts/ci/create-env-file.sh`.
+- Maven Enforcer rules for dependency convergence and duplicate dependency declarations.
 - JaCoCo coverage report on `./mvnw verify`, with a check that fails the build below 90% line or 85% branch coverage; CI publishes the coverage as a notice and uploads the HTML report.
 - Tests for simultaneous events on a resolved issue, resolve requests during ingestion, byte-by-byte reads and character encodings in the request size limit, nested context values, and the warning logged when no API keys are configured.
 - Testing documentation for coverage rules, uncovered code and transaction boundaries.

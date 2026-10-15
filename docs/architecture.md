@@ -99,6 +99,8 @@ Configuration comes from `application.yml`, overridden by environment variables 
 3. The embedded Tomcat server starts, and readiness reports `UP` once the database health check passes.
 4. On `SIGTERM`, the server stops accepting new requests and waits up to 20 seconds for in-flight requests before shutting down.
 
+In the Compose stack, the backend container starts only after PostgreSQL's `pg_isready` check passes, and the image's health check polls readiness, so `docker compose up --wait` returns once the backend can serve requests. `docker compose stop` sends `SIGTERM` and allows 30 seconds, more than the 20-second shutdown phase.
+
 Liveness (`/actuator/health/liveness`) reflects only the application's internal state, so a database outage makes the instance not ready without making it look broken.
 
 ## Authentication and access control
