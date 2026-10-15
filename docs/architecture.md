@@ -13,7 +13,7 @@ TraceLite is a modular monolith: one Spring Boot application, one PostgreSQL dat
                                  └─────────────────────────┘
 ```
 
-Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues, and lets clients list, filter, search and read issues. The dashboard, event history, the resolve and reopen endpoints and authentication are not built yet; the diagram describes the target design.
+Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues, and lets clients list, filter, search and read issues, page through their events, read statistics, and resolve and reopen them, all behind API keys. The dashboard lists, filters and pages issues and shows an issue summary; its investigation views (stack traces, event history, resolve and reopen) are not built yet.
 
 ## Build layout
 
@@ -149,6 +149,20 @@ The query endpoints return the stored issue fields.
 - **Statistics** read the issue, count its stored events, count events received in the last 24 hours and 7 days with derived Spring Data queries, and group the last 14 UTC days with one native query (`to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')`). The service fills days without events with zero, so the response always has 14 entries.
 
 Both methods run in read-only transactions with `REPEATABLE READ` isolation. In PostgreSQL that gives every statement in the transaction the same snapshot, so a page and its total, or the counts in one statistics response, never disagree because an event arrived between two queries.
+
+## Dashboard
+
+`frontend/` is a single-page application built with React, TypeScript and Vite and routed with React Router. It is served separately from the backend (the Vite dev server during development) and calls the REST API directly from the browser, so the backend must allow its origin through `TRACELITE_SECURITY_ALLOWEDORIGINS`. The backend's base URL comes from `VITE_API_BASE_URL` at build time; the management key is entered by the user at runtime and never built in.
+
+| Module | Responsibility |
+|---|---|
+| `api/client.ts` | The only code that calls `fetch`: adds `X-API-Key`, builds query strings, parses JSON and turns failures into an `ApiError` with a kind (`network`, `http`, `invalid-response`, `unexpected`), the status and the problem details |
+| `api/types.ts` | TypeScript types matching the API's JSON (issue, page, problem details) |
+| `useApiRequest.ts` | Runs a request when its inputs change, aborts the previous one, and returns loading, success or error state plus a retry function |
+| `issueListSearch.ts` | Converts between the URL's search parameters (`status`, `environment`, one-based `page`) and the API query, dropping unknown values |
+| `pages/` | Issue list (`/`), issue summary (`/issues/:issueId`) and a not-found page |
+
+Filters and the page live in the URL rather than in component state, so a view can be bookmarked and the back button works. A `401` from any request clears the stored key and shows the key form again.
 
 ## Error handling
 

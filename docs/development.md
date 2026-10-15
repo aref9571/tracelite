@@ -7,7 +7,7 @@
 | JDK | 21 | Building and running the backend |
 | Docker | recent, with Compose v2 | Local PostgreSQL and the integration tests |
 | Git | any recent | Source control |
-| Node.js | 22 LTS | Dashboard (from Day 11) |
+| Node.js | 22 LTS (22.22 or later) with npm | Dashboard |
 
 Maven is not required: the Maven Wrapper (`./mvnw`) downloads Maven 3.9.11 on first use. Run all commands from the repository root. On Windows, use `mvnw.cmd` in place of `./mvnw`.
 
@@ -100,6 +100,24 @@ With the backend running, the OpenAPI document is at <http://localhost:8080/v3/a
 Stop the application with `Ctrl+C`. It shuts down gracefully: in-flight requests get up to 20 seconds to complete.
 
 Stop PostgreSQL with `docker compose down`. Add `--volumes` to delete the data as well.
+
+## Running the dashboard
+
+The dashboard calls the backend from the browser, so the backend must allow the dashboard's origin. Add it to `.env` and restart the backend:
+
+```bash
+TRACELITE_SECURITY_ALLOWEDORIGINS=http://localhost:5173
+```
+
+Then start the Vite dev server and open <http://localhost:5173>:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Enter the value of `TRACELITE_SECURITY_MANAGEMENTKEY` when asked. If the backend runs elsewhere than `http://localhost:8080`, set `VITE_API_BASE_URL` (see [frontend/README.md](../frontend/README.md#configuration)). If the page says the backend could not be reached, check that the backend is running and that its `TRACELITE_SECURITY_ALLOWEDORIGINS` contains the exact origin shown in the message; a missing origin makes the browser block the response, which looks the same as a stopped backend.
 
 ## Health checks
 

@@ -20,6 +20,7 @@ The backend exposes `POST /api/v1/events`, `GET /api/v1/issues`, `GET /api/v1/is
 - **Database credentials:** supplied only through environment variables. There are no default passwords in the code or configuration, and the application does not start without database settings.
 - **Local PostgreSQL:** Docker Compose publishes PostgreSQL on `127.0.0.1` only, so it is not reachable from other machines, and it refuses to start without a password.
 - **Container image:** the backend image runs as an unprivileged system user, and its application files are owned by root and read-only to that user. `.dockerignore` lets only the build files and `backend/src/main` into the build, so `.env` and other local files cannot end up in a layer. No secret is set in the Dockerfile; passwords and keys are passed as environment variables when the container starts. The Compose stack publishes the backend on `127.0.0.1` only. CI checks the image for the generated secrets and for `.env` files on every run. Environment variables can still be read by anyone who can run `docker inspect` on the host, so access to the Docker daemon must be treated as access to the secrets.
+- **Dashboard:** the management key is entered by the user, kept only in the browser tab's `sessionStorage`, sent only in the `X-API-Key` header to the configured backend, and removed on **Change key** or after a `401`. It is never part of the build; `VITE_API_BASE_URL` is the only build-time setting. The dashboard loads no third-party scripts and renders API values as text, never as HTML.
 - **Flyway:** `clean` is disabled, so a misconfiguration cannot drop the schema.
 - **Secrets in Git:** `.env` and common key and keystore formats are git-ignored. CI generates a random database password and random API keys for each run. The fixed keys in `backend/src/test/resources/config/application.yml` are test data, only on the test classpath, and are valid nowhere else.
 
@@ -48,7 +49,7 @@ TRACELITE_SECURITY_PROJECTS_1_APPLICATION=billing-service
 TRACELITE_SECURITY_PROJECTS_1_INGESTIONKEY=<ingestion key for billing-service>
 ```
 
-The application name must match the `application` field of the events that key sends. Each application should receive only its own ingestion key; the management key belongs to operators and, later, the dashboard. Without any keys the backend starts but rejects every API call and logs a warning.
+The application name must match the `application` field of the events that key sends. Each application should receive only its own ingestion key; the management key belongs to operators and the dashboard. Without any keys the backend starts but rejects every API call and logs a warning.
 
 ### Rotating and revoking keys
 
@@ -69,6 +70,7 @@ TraceLite is a small-scale portfolio application and is not hardened for product
 - **No rate limiting or lock-out.** Failed attempts are not throttled. Keys are long and random, so guessing is not practical, but a client with a valid ingestion key can send events as fast as the server accepts them and fill the database. A production deployment needs rate limits per key and retention limits.
 - **An ingestion key is trusted for its application's environments.** It can send events for any environment of its application, and a key embedded in a client application should be treated as public.
 - **Keys are compared in constant time, but are not hashed with a slow algorithm.** Only in-memory SHA-256 hashes are kept; this is enough because keys are random and never stored on disk by TraceLite, unlike passwords.
+- **The dashboard key is readable by scripts on the page.** `sessionStorage` is cleared when the tab closes but is not protected from cross-site scripting, so the dashboard must be served only from a trusted origin. A production deployment would use short-lived user tokens instead of the shared management key.
 - Actuator endpoints share the application port. `health` and `info` are public and reveal no configuration, but a production deployment should serve them on a separate management port or network.
 - The database connection does not enforce TLS. Configure `sslmode` in `SPRING_DATASOURCE_URL` for any non-local database.
 - The application connects with a single database user that also owns the schema. Production use would separate the migration user from the runtime user.

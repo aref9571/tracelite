@@ -9,6 +9,14 @@
 
 Docker must be running: the integration tests start disposable PostgreSQL 17 containers with Testcontainers.
 
+Dashboard checks run from `frontend/`:
+
+```bash
+npm run lint     # ESLint
+npm test         # Vitest unit tests
+npm run build    # type check and production build
+```
+
 After `./mvnw verify`, the coverage report is in `backend/target/site/jacoco/index.html` (HTML), with `jacoco.xml` and `jacoco.csv` beside it.
 
 ## Coverage
@@ -35,7 +43,7 @@ JaCoCo marks a line as missed when the method it calls throws, even though the l
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to any branch and on every pull request. It has three jobs that run in parallel; the workflow fails if any step of any job fails, because every step exits with a non-zero status on failure and multi-command steps use `set -o pipefail` or `set -euo pipefail`.
+`.github/workflows/ci.yml` runs on every push to any branch and on every pull request. It has four jobs that run in parallel; the workflow fails if any step of any job fails, because every step exits with a non-zero status on failure and multi-command steps use `set -o pipefail` or `set -euo pipefail`.
 
 **Static checks**
 
@@ -51,6 +59,11 @@ JaCoCo marks a line as missed when the method it calls throws, even though the l
 4. `docker compose up --wait postgres`, using the real `docker-compose.yml`.
 5. `scripts/development/smoke-test.sh` against that database.
 6. `docker compose down --volumes`.
+
+**Frontend build and checks**
+
+1. Node.js 22 with the npm cache keyed on `frontend/package-lock.json`, then `npm ci`, which fails if the lock file does not match `package.json`.
+2. `npm run lint`, `npm test` and `npm run build` (the build runs `tsc` first, so a type error fails it).
 
 **Docker image and Compose stack**
 
@@ -109,6 +122,16 @@ Transactions start in the application services, never in controllers, and open-i
 | `IssueLifecycleService.resolve` / `reopen` | Read-write; `saveAndFlush` runs the version check inside the transaction | `IssueLifecycleServiceTest`, `IssueRepositoryTests`, simultaneous resolves in `IssueLifecycleIntegrationTests` and `ConcurrentIngestionTests` |
 | `IssueQueryService` | Read-only | `IssueSearchTests` |
 | `IssueHistoryService` | Read-only, `REPEATABLE READ`, so a page and its total, and all statistics, come from one snapshot | `IssueHistoryServiceTests` |
+
+### Dashboard tests
+
+| Test | Verifies |
+|---|---|
+| `src/api/client.test.ts` | Query strings and the `X-API-Key` header; issue IDs are URL-encoded; problem details become errors with their field errors; `401` calls the unauthorized callback and `403` does not; error bodies that are not problem details, network failures, non-JSON success responses and aborted requests |
+| `src/issueListSearch.test.ts` | URL parameters to query and back: unknown statuses and invalid page numbers are dropped, pages are one-based in the URL and zero-based in the API, blank environments mean no filter; the environment rule matches the backend's |
+| `src/api/apiKey.test.ts` | The key format check matches the backend's (32 to 128 letters, digits, `_` or `-`) |
+
+These are unit tests without a browser. Component tests and a check of the full workflow in a browser are planned with the Day 12 investigation views. The Day 11 views were checked by hand in Chromium against a running backend and PostgreSQL: key form, `401` and `403` handling, list, pagination, both filters, empty and filtered-empty states, a page past the end, issue summary and back navigation, unknown and invalid issue IDs, an origin missing from the CORS list, and a stopped backend.
 
 ## Smoke test
 

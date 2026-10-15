@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- React and TypeScript dashboard in `frontend/` (Vite, React Router): an issue list with status and environment filters, pagination and totals, kept in the URL; an issue summary page; and loading, empty, filtered-empty, page-past-the-end, not-found and error states for network failures, rejected keys (`401`), forbidden keys (`403`), invalid parameters (`400`) and server errors.
+- Dashboard API client with typed responses, request cancellation and retry; the management key is entered at runtime and kept in session storage; the backend URL is set with `VITE_API_BASE_URL`.
+- Dashboard unit tests (Vitest) and ESLint configuration, and a CI job that lints, tests, type-checks and builds the dashboard.
+
 - Backend container image (`backend/Dockerfile`): a multi-stage build with the Maven Wrapper, Spring Boot layers on `eclipse-temurin:21-jre-noble`, a non-root user, a readiness `HEALTHCHECK` and no secrets in any layer; `.dockerignore` limits the build context to the build files and main sources.
 - `backend` service in `docker-compose.yml`: starts after PostgreSQL is healthy, reads `.env`, publishes on `127.0.0.1` (`TRACELITE_BACKEND_PORT`), stops gracefully and keeps the database in the named volume.
 - `scripts/development/docker-stack-test.sh`: checks the health of both services, the non-root user, that no configured secret or `.env` file is in the image, ingestion and read-back through the container, graceful stop, and that data survives a restart of the stack.

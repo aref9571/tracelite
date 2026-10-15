@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: error ingestion, issue grouping, issue listing, event history, statistics, the resolve and reopen API and API-key authentication work, and the backend runs as a container with Docker Compose; the dashboard is not built yet.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID; their events can be paged newest first, their occurrence statistics read, and they can be resolved and reopened. Every API call needs an API key: applications send events with their own ingestion key, and the issue endpoints need the management key. See the status column below.
+> **Status: error ingestion, issue grouping, issue listing, event history, statistics, the resolve and reopen API and API-key authentication work, the backend runs as a container with Docker Compose, and a React dashboard lists and filters issues.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID; their events can be paged newest first, their occurrence statistics read, and they can be resolved and reopened. Every API call needs an API key: applications send events with their own ingestion key, and the issue endpoints need the management key. The dashboard shows the issue list with status and environment filters and pagination, and an issue summary; stack traces, event history and resolving from the dashboard are planned for Day 12. See the status column below.
 
 ## The problem
 
@@ -31,9 +31,10 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | Consistent RFC 9457 error responses without internal details | Implemented |
 | Health, liveness and readiness endpoints | Implemented |
 | OpenAPI documentation (`/v3/api-docs`, Swagger UI at `/swagger-ui.html`) | Implemented |
-| React/TypeScript investigation dashboard | Planned |
+| React/TypeScript dashboard: issue list with status and environment filters, pagination, issue summary, loading, empty and error states ([frontend/README.md](frontend/README.md)) | Implemented |
+| Dashboard investigation views: stack traces, event history, resolve and reopen | Planned |
 | Backend container image (multi-stage, non-root, health check) and Docker Compose stack with PostgreSQL | Implemented |
-| GitHub Actions CI: static checks (shellcheck, hadolint, actionlint), build, Testcontainers tests, coverage, smoke test, image build and Compose stack test | Implemented |
+| GitHub Actions CI: static checks (shellcheck, hadolint, actionlint), build, Testcontainers tests, coverage, smoke test, image build and Compose stack test, dashboard lint, tests and build | Implemented |
 
 ## Technology stack
 
@@ -42,7 +43,7 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 - **API documentation:** springdoc-openapi (OpenAPI 3, Swagger UI)
 - **Testing:** JUnit 5, AssertJ, Mockito, MockMvc, Spring Boot Test, Testcontainers, JaCoCo coverage reports
 - **Infrastructure:** Docker, Docker Compose, GitHub Actions
-- **Frontend (planned):** React, TypeScript, Vite
+- **Frontend:** React 19, TypeScript, Vite, React Router, Vitest, ESLint
 
 ## Repository structure
 
@@ -59,7 +60,7 @@ tracelite/
 │       ├── event/           Error event ingestion (api, application, domain, persistence)
 │       └── issue/           Issue grouping and management (api, application, domain, persistence)
 ├── docker-compose.yml       PostgreSQL and the backend container
-├── frontend/                Dashboard (scaffolded later)
+├── frontend/                React and TypeScript dashboard (Vite, npm)
 ├── docs/                    Architecture, API, database, security, development, testing docs
 │   └── decisions/           Architecture decision records
 └── scripts/                 Development (smoke and Docker stack tests) and CI helper scripts
@@ -69,7 +70,7 @@ Empty feature packages are tracked with `.gitkeep` files and will be populated a
 
 ## Getting started
 
-Prerequisites: JDK 21 and Docker with Compose v2. Maven does not need to be installed; the wrapper downloads it.
+Prerequisites: JDK 21 and Docker with Compose v2, plus Node.js 22 for the dashboard. Maven does not need to be installed; the wrapper downloads it.
 
 ```bash
 cp .env.example .env                              # then set the password and API keys (below)
@@ -115,6 +116,16 @@ curl -X POST -H "X-API-Key: $TRACELITE_SECURITY_MANAGEMENTKEY" 'http://localhost
 To run the backend in a container instead of with Maven, start the whole stack with `docker compose up --detach --wait`; it builds the image on first use and serves the same API on `127.0.0.1:8080`. See [docs/development.md](docs/development.md#with-docker-compose).
 
 Browse every endpoint in Swagger UI at <http://localhost:8080/swagger-ui.html>; use **Authorize** to enter a key.
+
+To use the dashboard, add `TRACELITE_SECURITY_ALLOWEDORIGINS=http://localhost:5173` to `.env` before starting the backend, then:
+
+```bash
+cd frontend
+npm ci
+npm run dev                                       # http://localhost:5173, enter the management key
+```
+
+See [frontend/README.md](frontend/README.md) for configuration and scripts.
 
 On Windows use `mvnw.cmd` instead of `./mvnw`. [docs/development.md](docs/development.md) has the full setup, configuration reference and troubleshooting.
 
