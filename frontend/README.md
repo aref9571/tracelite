@@ -7,8 +7,10 @@ A React and TypeScript single-page application, built with Vite, for browsing th
 - Asks for the management key and keeps it in the browser tab's session storage.
 - Lists issues from `GET /api/v1/issues`, newest first, 20 per page, with the exception type, message, status, environment, application, event count and last-seen time.
 - Filters by status and environment; filters and page number are kept in the URL (`/?status=UNRESOLVED&environment=production&page=2`), so a filtered view can be bookmarked and the browser's back button works.
-- Opens an issue's summary from `GET /api/v1/issues/{id}` at `/issues/{id}`.
-- Shows loading, empty, and error states: no issues yet, no issues matching the filters, a page past the end, an unknown issue, a rejected key (`401`, back to the key form), a key that may not read issues (`403`), invalid parameters (`400` with the field errors), server errors, and a backend that cannot be reached.
+- Opens an issue at `/issues/{id}`: the summary from `GET /api/v1/issues/{id}` (exception type, message, status, application, environment, event count, first-seen, last-seen and resolved times, fingerprint).
+- Shows the issue's events from `GET /api/v1/issues/{id}/events`, 10 per page and newest first, with the page in the URL (`/issues/{id}?page=2`). Each event shows when it was received and when it occurred, its correlation ID, message, context as JSON, and its stack trace with the exception line, frames, `Caused by` lines and omitted frames set apart. The newest stack trace is expanded; the others open on click.
+- Resolves and reopens the issue with `POST /api/v1/issues/{id}/resolve` and `/reopen`. The button is disabled while the request runs, and the page then shows the issue the backend returned. If the backend answers `409` (the issue was already changed by another request or reopened by a new event), the page reloads the issue and says so. Other failures are shown without changing the displayed status.
+- Shows loading, empty, and error states: no issues yet, no issues matching the filters, a page past the end, an unknown issue, a rejected key (`401`, back to the key form), a key that may not use the issue endpoints (`403`), an event page past the end, no stored events, invalid parameters (`400` with the field errors), server errors, and a backend that cannot be reached.
 
 Every value on screen comes from the backend; the dashboard has no built-in sample data.
 
@@ -51,7 +53,7 @@ Open <http://localhost:5173> and enter the value of `TRACELITE_SECURITY_MANAGEME
 |---|---|
 | `npm run dev` | Starts the Vite dev server on `http://localhost:5173` |
 | `npm run lint` | ESLint with the TypeScript and React Hooks rules |
-| `npm test` | Unit tests with Vitest (API client, URL filter handling, key format) |
+| `npm test` | Vitest unit and component tests in jsdom (API client, URL handling, key format, stack trace lines, issue page) |
 | `npm run build` | Type-checks with `tsc` and builds static files into `dist/` |
 | `npm run preview` | Serves `dist/` on `http://localhost:4173` |
 
@@ -66,9 +68,11 @@ frontend/
     ├── main.tsx             Entry point and router
     ├── App.tsx              Layout, management key handling and routes
     ├── api/                 API client, response types, base URL and key storage
-    ├── components/          Filters, pagination, error notice, key form, status badge
-    ├── pages/               Issue list, issue summary and not-found pages
+    ├── components/          Filters, pagination, error notice, key form, status badge, event history, stack trace, resolve/reopen
+    ├── pages/               Issue list, issue page and not-found pages
     ├── issueListSearch.ts   Converts between URL search parameters and list queries
+    ├── stackTrace.ts        Splits and classifies stack trace lines for display
+    ├── test/setup.ts        Test setup: unmounts rendered components after each test
     ├── useApiRequest.ts     Loads data, cancels outdated requests and supports retry
     └── format.ts            Date and number formatting
 ```

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Dashboard issue page: paginated event history (10 per page, newest first, page kept in the URL) with each event's received and occurred times, correlation ID, message, context and a stack trace that separates the summary, frames, `Caused by` lines and omitted frames; the newest trace is expanded.
+- Resolve and reopen buttons on the issue page. The page shows the issue the backend returns; after a `409` it reloads the issue and says that another request or a new event changed it. Failures (`403`, server errors, an unreachable backend) are shown without changing the displayed status.
+- Dashboard component tests with React Testing Library in jsdom, and README screenshots of the dashboard.
+
 - React and TypeScript dashboard in `frontend/` (Vite, React Router): an issue list with status and environment filters, pagination and totals, kept in the URL; an issue summary page; and loading, empty, filtered-empty, page-past-the-end, not-found and error states for network failures, rejected keys (`401`), forbidden keys (`403`), invalid parameters (`400`) and server errors.
 - Dashboard API client with typed responses, request cancellation and retry; the management key is entered at runtime and kept in session storage; the backend URL is set with `VITE_API_BASE_URL`.
 - Dashboard unit tests (Vitest) and ESLint configuration, and a CI job that lints, tests, type-checks and builds the dashboard.

@@ -2,7 +2,7 @@
 
 TraceLite is a lightweight application error-monitoring platform. Applications send structured error events to a REST API; TraceLite stores them in PostgreSQL, groups similar exceptions into issues using deterministic fingerprints, and gives developers APIs and a small web dashboard to investigate and resolve those issues.
 
-> **Status: error ingestion, issue grouping, issue listing, event history, statistics, the resolve and reopen API and API-key authentication work, the backend runs as a container with Docker Compose, and a React dashboard lists and filters issues.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID; their events can be paged newest first, their occurrence statistics read, and they can be resolved and reopened. Every API call needs an API key: applications send events with their own ingestion key, and the issue endpoints need the management key. The dashboard shows the issue list with status and environment filters and pagination, and an issue summary; stack traces, event history and resolving from the dashboard are planned for Day 12. See the status column below.
+> **Status: error ingestion, issue grouping, issue listing, event history, statistics, the resolve and reopen API and API-key authentication work, the backend runs as a container with Docker Compose, and a React dashboard lists issues and lets developers investigate and resolve them.** The backend accepts error events at `POST /api/v1/events`, validates them, and stores them in PostgreSQL attached to an issue. Events are grouped by a fingerprint of the exception type and normalised stack frames, and simultaneous events never create duplicate issues. Issues can be listed with filters, text search, sorting and pagination, and read by ID; their events can be paged newest first, their occurrence statistics read, and they can be resolved and reopened. Every API call needs an API key: applications send events with their own ingestion key, and the issue endpoints need the management key. The dashboard shows the issue list with status and environment filters and pagination, and an issue page with the stored events, their stack traces and context, and resolve and reopen buttons. See the status column below.
 
 ## The problem
 
@@ -31,8 +31,8 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | Consistent RFC 9457 error responses without internal details | Implemented |
 | Health, liveness and readiness endpoints | Implemented |
 | OpenAPI documentation (`/v3/api-docs`, Swagger UI at `/swagger-ui.html`) | Implemented |
-| React/TypeScript dashboard: issue list with status and environment filters, pagination, issue summary, loading, empty and error states ([frontend/README.md](frontend/README.md)) | Implemented |
-| Dashboard investigation views: stack traces, event history, resolve and reopen | Planned |
+| React/TypeScript dashboard: issue list with status and environment filters, pagination, loading, empty and error states ([frontend/README.md](frontend/README.md)) | Implemented |
+| Dashboard issue page: summary, paginated event history with readable stack traces and context, resolve and reopen | Implemented |
 | Backend container image (multi-stage, non-root, health check) and Docker Compose stack with PostgreSQL | Implemented |
 | GitHub Actions CI: static checks (shellcheck, hadolint, actionlint), build, Testcontainers tests, coverage, smoke test, image build and Compose stack test, dashboard lint, tests and build | Implemented |
 
@@ -126,6 +126,16 @@ npm run dev                                       # http://localhost:5173, enter
 ```
 
 See [frontend/README.md](frontend/README.md) for configuration and scripts.
+
+The issue list, with one issue per fingerprint, environment and application:
+
+![Dashboard issue list](docs/images/dashboard-issue-list.png)
+
+An issue page after **Resolve issue**, with the newest event's stack trace:
+
+![Dashboard issue page](docs/images/dashboard-issue-detail.png)
+
+Both screenshots were taken from the dashboard running against a local backend, with events submitted through `POST /api/v1/events`.
 
 On Windows use `mvnw.cmd` instead of `./mvnw`. [docs/development.md](docs/development.md) has the full setup, configuration reference and troubleshooting.
 

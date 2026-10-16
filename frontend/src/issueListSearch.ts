@@ -46,7 +46,7 @@ function isIssueStatus(value: string | null): value is IssueStatus {
   return ISSUE_STATUSES.some((status) => status === value);
 }
 
-function parsePageNumber(value: string | null): number {
+export function parsePageNumber(value: string | null): number {
   if (value === null || !/^\d+$/.test(value)) {
     return 1;
   }

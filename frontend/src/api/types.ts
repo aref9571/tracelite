@@ -16,6 +16,17 @@ export interface Issue {
   resolvedAt: string | null;
 }
 
+export interface IssueEvent {
+  id: string;
+  exceptionType: string;
+  message: string | null;
+  stackTrace: string | null;
+  occurredAt: string;
+  receivedAt: string;
+  correlationId: string | null;
+  context: Record<string, unknown> | null;
+}
+
 export interface Page<T> {
   items: T[];
   page: number;
@@ -38,9 +49,12 @@ export interface ProblemDetail {
   errors?: FieldError[];
 }
 
-export interface IssueListQuery {
-  status?: IssueStatus;
-  environment?: string;
+export interface PageQuery {
   page: number;
   size: number;
+}
+
+export interface IssueListQuery extends PageQuery {
+  status?: IssueStatus;
+  environment?: string;
 }

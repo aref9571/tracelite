@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError } from './api/client.ts';
+import { toApiError, type ApiError } from './api/client.ts';
 
 export type RequestState<T> =
   | { status: 'loading' }
@@ -37,8 +37,4 @@ export function useApiRequest<T>(load: Loader<T>): [RequestState<T>, () => void]
     return [{ status: 'loading' }, retry];
   }
   return [settled.state, retry];
-}
-
-function toApiError(error: unknown): ApiError {
-  return error instanceof ApiError ? error : new ApiError('An unexpected error occurred.', 'unexpected');
 }

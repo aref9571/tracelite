@@ -4,17 +4,19 @@ interface PaginationProps {
   pageNumber: number;
   totalPages: number;
   pageHref: (pageNumber: number) => string;
+  label?: string;
+  linkState?: unknown;
 }
 
-export default function Pagination({ pageNumber, totalPages, pageHref }: PaginationProps) {
+export default function Pagination({ pageNumber, totalPages, pageHref, label = 'Issue pages', linkState }: PaginationProps) {
   if (totalPages <= 1 && pageNumber <= 1) {
     return null;
   }
 
   return (
-    <nav className="pagination" aria-label="Issue pages">
+    <nav className="pagination" aria-label={label}>
       {pageNumber > 1 ? (
-        <Link to={pageHref(pageNumber - 1)} rel="prev">
+        <Link to={pageHref(pageNumber - 1)} state={linkState} rel="prev">
           Previous
         </Link>
       ) : (
@@ -24,7 +26,7 @@ export default function Pagination({ pageNumber, totalPages, pageHref }: Paginat
         Page {pageNumber} of {Math.max(totalPages, 1)}
       </span>
       {pageNumber < totalPages ? (
-        <Link to={pageHref(pageNumber + 1)} rel="next">
+        <Link to={pageHref(pageNumber + 1)} state={linkState} rel="next">
           Next
         </Link>
       ) : (

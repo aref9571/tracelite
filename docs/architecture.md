@@ -13,7 +13,7 @@ TraceLite is a modular monolith: one Spring Boot application, one PostgreSQL dat
                                  └─────────────────────────┘
 ```
 
-Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues, and lets clients list, filter, search and read issues, page through their events, read statistics, and resolve and reopen them, all behind API keys. The dashboard lists, filters and pages issues and shows an issue summary; its investigation views (stack traces, event history, resolve and reopen) are not built yet.
+Today the backend connects to PostgreSQL, runs Flyway on startup, validates the JPA mapping against the schema, and exposes health probes. It accepts error events at `POST /api/v1/events`, stores them and attaches them to issues, and lets clients list, filter, search and read issues, page through their events, read statistics, and resolve and reopen them, all behind API keys. The dashboard lists, filters and pages issues, and its issue page shows the summary, the event history with stack traces, and resolve and reopen controls.
 
 ## Build layout
 
@@ -157,12 +157,16 @@ Both methods run in read-only transactions with `REPEATABLE READ` isolation. In 
 | Module | Responsibility |
 |---|---|
 | `api/client.ts` | The only code that calls `fetch`: adds `X-API-Key`, builds query strings, parses JSON and turns failures into an `ApiError` with a kind (`network`, `http`, `invalid-response`, `unexpected`), the status and the problem details |
-| `api/types.ts` | TypeScript types matching the API's JSON (issue, page, problem details) |
+| `api/types.ts` | TypeScript types matching the API's JSON (issue, event, page, problem details) |
 | `useApiRequest.ts` | Runs a request when its inputs change, aborts the previous one, and returns loading, success or error state plus a retry function |
 | `issueListSearch.ts` | Converts between the URL's search parameters (`status`, `environment`, one-based `page`) and the API query, dropping unknown values |
-| `pages/` | Issue list (`/`), issue summary (`/issues/:issueId`) and a not-found page |
+| `stackTrace.ts` | Splits a stack trace into lines and classifies each as summary, frame (`at ...`), cause (`Caused by:`, `Suppressed:`) or omitted (`... n more`) for display |
+| `components/` | Filters, pagination, error notice, key form, status badge, event history, stack trace and the resolve/reopen control |
+| `pages/` | Issue list (`/`), issue page (`/issues/:issueId`, event page in `?page=`) and a not-found page |
 
 Filters and the page live in the URL rather than in component state, so a view can be bookmarked and the back button works. A `401` from any request clears the stored key and shows the key form again.
+
+The issue page loads the issue and its event page separately, so a failed event request leaves the summary and the resolve control usable. Resolve and reopen use the issue in the backend's response as the new state instead of changing the status locally. A `409` means the issue was already in that state or another change won, so the page fetches the issue again and shows its current status. Other failures leave the displayed issue unchanged.
 
 ## Error handling
 

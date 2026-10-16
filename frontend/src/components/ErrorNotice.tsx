@@ -45,7 +45,7 @@ function describeError(error: ApiError): string {
 
 function describeHttpError(error: ApiError): string {
   if (error.status === 403) {
-    return 'This key may not read issues. Use the management key, not an ingestion key.';
+    return 'This key cannot be used with the dashboard. Use the management key, not an ingestion key.';
   }
   const detail = error.problem?.detail;
   if (error.status !== null && error.status >= 500) {

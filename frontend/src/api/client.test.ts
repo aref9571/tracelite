@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient, toIssueListParameters } from './client.ts';
-import type { Issue, Page } from './types.ts';
+import { ApiError, createApiClient, toApiError, toIssueListParameters } from './client.ts';
+import type { Issue, IssueEvent, Page } from './types.ts';
 
 const API_KEY = 'a'.repeat(64);
 
@@ -82,6 +82,60 @@ describe('createApiClient', () => {
 
     expect(fetchMock.mock.calls[0]![0]).toBe(`http://localhost:8080/api/v1/issues/${issue.id}`);
     expect(fetchMock.mock.calls[1]![0]).toBe('http://localhost:8080/api/v1/issues/a%2Fb%3Fc');
+  });
+
+  it('reads one page of the events of an issue', async () => {
+    const event: IssueEvent = {
+      id: '0d9c8b7a-6f5e-4d3c-8b2a-1f0e9d8c7b6a',
+      exceptionType: issue.exceptionType,
+      message: 'Cart is empty',
+      stackTrace: 'java.lang.IllegalStateException: Cart is empty',
+      occurredAt: '2026-10-13T09:59:58Z',
+      receivedAt: '2026-10-13T10:00:00.123456Z',
+      correlationId: 'req-7f3a',
+      context: { orderId: 'o-1001' },
+    };
+    const eventPage: Page<IssueEvent> = { items: [event], page: 2, size: 10, totalItems: 21, totalPages: 3 };
+    const fetchMock = stubFetch(async () => jsonResponse(200, eventPage));
+    const client = createApiClient('http://localhost:8080', API_KEY);
+
+    await expect(client.listIssueEvents(issue.id, { page: 2, size: 10 })).resolves.toEqual(eventPage);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`http://localhost:8080/api/v1/issues/${issue.id}/events?page=2&size=10`);
+    expect(init?.method).toBe('GET');
+  });
+
+  it.each([
+    ['resolveIssue', 'resolve'],
+    ['reopenIssue', 'reopen'],
+  ] as const)('%s posts to the %s endpoint without a body', async (method, action) => {
+    const fetchMock = stubFetch(async () => jsonResponse(200, issue));
+    const client = createApiClient('http://localhost:8080', API_KEY);
+
+    await expect(client[method](issue.id)).resolves.toEqual(issue);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`http://localhost:8080/api/v1/issues/${issue.id}/${action}`);
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBeUndefined();
+    expect(init?.headers).toEqual({ Accept: 'application/json', 'X-API-Key': API_KEY });
+  });
+
+  it('turns a status conflict into an HTTP error with status 409', async () => {
+    const problem = {
+      title: 'Invalid status transition',
+      status: 409,
+      detail: 'The issue status cannot change from RESOLVED to RESOLVED.',
+      currentStatus: 'RESOLVED',
+    };
+    stubFetch(async () => jsonResponse(409, problem, 'application/problem+json'));
+    const client = createApiClient('http://localhost:8080', API_KEY);
+
+    const error = await captureError(client.resolveIssue(issue.id));
+
+    expect(error.status).toBe(409);
+    expect(error.message).toBe(problem.detail);
   });
 
   it('turns a problem detail into an HTTP error with its field errors', async () => {
@@ -170,5 +224,14 @@ describe('createApiClient', () => {
     await expect(client.listIssues({ page: 0, size: 20 }, controller.signal)).rejects.toMatchObject({
       name: 'AbortError',
     });
+  });
+});
+
+describe('toApiError', () => {
+  it('keeps an ApiError and wraps anything else as unexpected', () => {
+    const apiError = new ApiError('Not found', 'http', 404);
+
+    expect(toApiError(apiError)).toBe(apiError);
+    expect(toApiError(new Error('boom'))).toMatchObject({ kind: 'unexpected', status: null });
   });
 });

@@ -1,10 +1,13 @@
-import { useCallback } from 'react';
-import { Link, useLocation, useParams } from 'react-router';
+import { useCallback, useState } from 'react';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router';
 import type { ApiClient } from '../api/client.ts';
 import type { Issue } from '../api/types.ts';
 import ErrorNotice from '../components/ErrorNotice.tsx';
+import IssueEventHistory from '../components/IssueEventHistory.tsx';
+import IssueStatusActions from '../components/IssueStatusActions.tsx';
 import StatusBadge from '../components/StatusBadge.tsx';
 import { formatCount, formatDateTime } from '../format.ts';
+import { parsePageNumber } from '../issueListSearch.ts';
 import { useApiRequest } from '../useApiRequest.ts';
 
 interface IssueDetailPageProps {
@@ -14,10 +17,15 @@ interface IssueDetailPageProps {
 export default function IssueDetailPage({ client }: IssueDetailPageProps) {
   const { issueId = '' } = useParams();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const backHref = `/${listSearchFrom(location.state)}`;
+  const eventPageNumber = parsePageNumber(searchParams.get('page'));
+  const issueHref = `/issues/${encodeURIComponent(issueId)}`;
+  const eventPageHref = (pageNumber: number) => (pageNumber > 1 ? `${issueHref}?page=${pageNumber}` : issueHref);
 
   const load = useCallback((signal: AbortSignal) => client.getIssue(issueId, signal), [client, issueId]);
   const [request, retry] = useApiRequest(load);
+  const [statusChange, setStatusChange] = useState<{ loaded: Issue; current: Issue } | null>(null);
 
   return (
     <section>
@@ -38,16 +46,38 @@ export default function IssueDetailPage({ client }: IssueDetailPageProps) {
         ) : (
           <ErrorNotice error={request.error} onRetry={retry} />
         ))}
-      {request.status === 'success' && <IssueSummary issue={request.data} />}
+      {request.status === 'success' && (
+        <>
+          <IssueSummary
+            issue={statusChange?.loaded === request.data ? statusChange.current : request.data}
+            client={client}
+            onIssueChange={(current) => setStatusChange({ loaded: request.data, current })}
+          />
+          <IssueEventHistory
+            client={client}
+            issueId={issueId}
+            pageNumber={eventPageNumber}
+            pageHref={eventPageHref}
+            linkState={location.state}
+          />
+        </>
+      )}
     </section>
   );
 }
 
-function IssueSummary({ issue }: { issue: Issue }) {
+interface IssueSummaryProps {
+  issue: Issue;
+  client: ApiClient;
+  onIssueChange: (issue: Issue) => void;
+}
+
+function IssueSummary({ issue, client, onIssueChange }: IssueSummaryProps) {
   return (
     <article className="panel">
       <h1 className="issue-title">{issue.exceptionType}</h1>
       {issue.message && <p className="issue-detail-message">{issue.message}</p>}
+      <IssueStatusActions key={issue.id} issue={issue} client={client} onIssueChange={onIssueChange} />
       <dl className="issue-facts">
         <dt>Status</dt>
         <dd>
