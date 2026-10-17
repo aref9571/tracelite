@@ -60,6 +60,8 @@ tracelite:
     max-event-age: 30d
 
 logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
   level:
     root: INFO
     com.tracelite: INFO

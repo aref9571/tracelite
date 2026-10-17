@@ -69,9 +69,9 @@ The backend container reads every variable in `.env` (`env_file`), except that C
 
 The image:
 
-- is built in two stages: a JDK stage runs `./mvnw package -DskipTests` (the tests run in CI, not in the image build) and extracts the jar into Spring Boot's layers, and the runtime stage is `eclipse-temurin:21-jre-noble` with only those layers, so a code change rebuilds only the small application layer;
+- is built in two stages: a build stage based on the official `maven:3.9.11-eclipse-temurin-21-noble` image runs `mvn package -DskipTests` (the tests run in CI, not in the image build) and extracts the jar into Spring Boot's layers, and the runtime stage is `eclipse-temurin:21-jre-noble` with only those layers, so a code change rebuilds only the small application layer;
 - runs as the system user `tracelite`, not root, and the application files belong to root, so the process cannot modify them;
-- contains no configuration secrets: `.dockerignore` sends only the Maven Wrapper, the two `pom.xml` files and `backend/src/main` to the build, so `.env` can never be copied in, and every password and key is supplied when the container starts;
+- contains no configuration secrets: `.dockerignore` sends only the two `pom.xml` files and `backend/src/main` to the build, so `.env` can never be copied in, and every password and key is supplied when the container starts;
 - has a `HEALTHCHECK` on `/actuator/health/readiness`, which Compose uses for `--wait` and `docker compose ps`;
 - limits the JVM heap to 75% of the container's memory limit (`-XX:MaxRAMPercentage=75`).
 
@@ -153,6 +153,7 @@ Readiness returns HTTP 503 when the database is unreachable. In the default prof
 | `TRACELITE_SECURITY_PROJECTS_<n>_APPLICATION` | — | for ingestion | Application name the `n`-th ingestion key belongs to (`n` = 0, 1, 2, ...); an application may appear more than once to allow key rotation |
 | `TRACELITE_SECURITY_PROJECTS_<n>_INGESTIONKEY` | — | for ingestion | Ingestion key for that application; required whenever the application is set |
 | `TRACELITE_SECURITY_ALLOWEDORIGINS` | none | no | Comma-separated browser origins allowed to call the API, e.g. `http://localhost:5173` |
+| `LOGGING_STRUCTURED_FORMAT_CONSOLE` | none (plain text) | no | `ecs` or `logstash` writes console logs as JSON lines |
 
 The `SPRING_DATASOURCE_*` names are Spring Boot's standard environment-variable mapping for `spring.datasource.*`, so no custom placeholders are involved. The `TRACELITE_INGESTION_*` and `TRACELITE_SECURITY_*` variables map to `tracelite.ingestion.*` and `tracelite.security.*` the same way (Spring drops the dashes, so `management-key` becomes `MANAGEMENTKEY`, and `projects[0].ingestion-key` becomes `PROJECTS_0_INGESTIONKEY`); sizes use Spring's `DataSize` format (`256KB`) and durations its `Duration` format (`5m`, `30d`).
 
@@ -183,7 +184,21 @@ Tests do not use a dedicated profile. Testcontainers provides the database conne
 
 ## Logging
 
-Logs go to the console in Spring Boot's default format. Levels are set in `application.yml` and can be overridden per package with environment variables, e.g. `LOGGING_LEVEL_ORG_FLYWAYDB=DEBUG`. Structured logs and correlation identifiers are planned for a later milestone.
+Logs go to the console in Spring Boot's default format. Levels are set in `application.yml` and can be overridden per package with environment variables, e.g. `LOGGING_LEVEL_ORG_FLYWAYDB=DEBUG`.
+
+Every response has an `X-Request-Id` header, and every line logged while a request is handled shows the same ID in brackets after the thread name. Each `/api/**` request also gets one `INFO` line with its method, path, status and duration ([ADR 0006](decisions/0006-request-ids-and-structured-logging.md)):
+
+```
+... [nio-8080-exec-4] [3f2b0c1e-...] c.tracelite.common.web.RequestIdFilter : GET /api/v1/issues answered 401 in 27 ms
+```
+
+To find the logs of one request, take the ID from its response and search for it. A client or proxy may send its own `X-Request-Id` (1 to 64 letters, digits, `.`, `_` or `-`), which is then used instead of a generated one.
+
+Set `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (in `.env` for the Compose stack) to write JSON lines in the Elastic Common Schema instead; the request ID becomes the `requestId` field.
+
+## Ingestion benchmark
+
+`scripts/benchmark/IngestionBenchmark.java` measures ingestion throughput and latency against a running backend. How to run it, the recorded environment and the results are in [performance.md](performance.md).
 
 ## Smoke test
 

@@ -4,6 +4,7 @@ import com.tracelite.event.application.IssueStatistics.DailyEventCount;
 import com.tracelite.event.domain.ErrorEvent;
 import com.tracelite.event.persistence.DailyEventCountView;
 import com.tracelite.event.persistence.ErrorEventRepository;
+import com.tracelite.event.persistence.EventCountsView;
 import com.tracelite.issue.application.IssueNotFoundException;
 import com.tracelite.issue.domain.Issue;
 import com.tracelite.issue.persistence.IssueRepository;
@@ -46,10 +47,11 @@ public class IssueHistoryService {
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Page<ErrorEvent> getEvents(UUID issueId, int page, int size) {
-        if (!issueRepository.existsById(issueId)) {
+        Page<ErrorEvent> events = errorEventRepository.findByIssueId(issueId, PageRequest.of(page, size, NEWEST_FIRST));
+        if (events.isEmpty() && !issueRepository.existsById(issueId)) {
             throw new IssueNotFoundException(issueId);
         }
-        return errorEventRepository.findByIssueId(issueId, PageRequest.of(page, size, NEWEST_FIRST));
+        return events;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -58,21 +60,19 @@ public class IssueHistoryService {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         LocalDate today = LocalDate.ofInstant(now, ZoneOffset.UTC);
         LocalDate firstDay = today.minusDays(DAILY_COUNT_DAYS - 1);
+        EventCountsView counts = errorEventRepository.countEvents(
+                issueId, now.minus(Duration.ofHours(24)), now.minus(Duration.ofDays(7)));
 
         return new IssueStatistics(
                 issue.getId(),
                 issue.getOccurrenceCount(),
-                errorEventRepository.countByIssueId(issueId),
+                counts.getTotalEvents(),
                 issue.getFirstSeenAt(),
                 issue.getLastSeenAt(),
                 now,
-                countEventsSince(issueId, now.minus(Duration.ofHours(24))),
-                countEventsSince(issueId, now.minus(Duration.ofDays(7))),
+                counts.getEventsSinceLastDay(),
+                counts.getEventsSinceLastWeek(),
                 dailyEventCounts(issueId, firstDay, today));
-    }
-
-    private long countEventsSince(UUID issueId, Instant since) {
-        return errorEventRepository.countByIssueIdAndReceivedAtGreaterThanEqual(issueId, since);
     }
 
     private List<DailyEventCount> dailyEventCounts(UUID issueId, LocalDate firstDay, LocalDate lastDay) {

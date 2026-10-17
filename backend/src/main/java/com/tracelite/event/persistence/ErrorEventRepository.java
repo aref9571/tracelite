@@ -14,9 +14,17 @@ public interface ErrorEventRepository extends JpaRepository<ErrorEvent, UUID> {
 
     Page<ErrorEvent> findByIssueId(UUID issueId, Pageable pageable);
 
-    long countByIssueId(UUID issueId);
-
-    long countByIssueIdAndReceivedAtGreaterThanEqual(UUID issueId, Instant since);
+    @Query(value = """
+            SELECT count(*) AS "totalEvents",
+                   count(*) FILTER (WHERE received_at >= :lastDaySince) AS "eventsSinceLastDay",
+                   count(*) FILTER (WHERE received_at >= :lastWeekSince) AS "eventsSinceLastWeek"
+            FROM events
+            WHERE issue_id = :issueId
+            """, nativeQuery = true)
+    EventCountsView countEvents(
+            @Param("issueId") UUID issueId,
+            @Param("lastDaySince") Instant lastDaySince,
+            @Param("lastWeekSince") Instant lastWeekSince);
 
     @Query(value = """
             SELECT to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, count(*) AS "eventCount"

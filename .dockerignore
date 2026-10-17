@@ -1,6 +1,4 @@
 **
-!mvnw
-!.mvn/wrapper/maven-wrapper.properties
 !pom.xml
 !backend/pom.xml
 !backend/src/main/

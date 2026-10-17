@@ -46,6 +46,9 @@ jobs:
           set -o pipefail
           ./mvnw -B -ntp verify 2>&1 | tee build.log
 
+      - name: Compile ingestion benchmark
+        run: javac -Werror -Xlint:all -d "${RUNNER_TEMP}/benchmark" scripts/benchmark/IngestionBenchmark.java
+
       - name: Summarize test results
         if: always()
         run: scripts/ci/summarize-tests.sh backend/target/surefire-reports

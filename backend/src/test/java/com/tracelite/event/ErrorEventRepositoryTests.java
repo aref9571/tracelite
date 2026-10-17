@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tracelite.event.domain.ErrorEvent;
 import com.tracelite.event.persistence.ErrorEventRepository;
+import com.tracelite.event.persistence.EventCountsView;
 import com.tracelite.integration.PostgresTestcontainersConfiguration;
 import com.tracelite.issue.domain.Issue;
 import com.tracelite.issue.persistence.IssueRepository;
@@ -88,7 +89,7 @@ class ErrorEventRepositoryTests {
                 .containsExactly(BASE_TIME.plusSeconds(4), BASE_TIME.plusSeconds(3));
         assertThat(lastPage.getContent()).extracting(ErrorEvent::getReceivedAt)
                 .containsExactly(BASE_TIME);
-        assertThat(eventRepository.countByIssueId(otherIssue.getId())).isEqualTo(1);
+        assertThat(countEvents(otherIssue)).isEqualTo(1);
     }
 
     @Test
@@ -103,8 +104,38 @@ class ErrorEventRepositoryTests {
 
         jdbcTemplate.update("delete from issues where id = ?", issue.getId());
 
-        assertThat(eventRepository.countByIssueId(issue.getId())).isZero();
-        assertThat(eventRepository.countByIssueId(otherIssue.getId())).isEqualTo(1);
+        assertThat(countEvents(issue)).isZero();
+        assertThat(countEvents(otherIssue)).isEqualTo(1);
+    }
+
+    @Test
+    void countsAllEventsOfAnIssueAndThoseReceivedSinceEachBoundary() {
+        Issue issue = saveIssue("1");
+        saveEvent(issue, BASE_TIME.minusSeconds(1));
+        saveEvent(issue, BASE_TIME);
+        saveEvent(issue, BASE_TIME.plusSeconds(1));
+        saveEvent(issue, BASE_TIME.plusSeconds(2));
+        saveEvent(saveIssue("2"), BASE_TIME.plusSeconds(2));
+        entityManager.clear();
+
+        EventCountsView counts = eventRepository.countEvents(issue.getId(), BASE_TIME.plusSeconds(2), BASE_TIME);
+
+        assertThat(counts.getTotalEvents()).isEqualTo(4);
+        assertThat(counts.getEventsSinceLastDay()).isEqualTo(1);
+        assertThat(counts.getEventsSinceLastWeek()).isEqualTo(3);
+    }
+
+    @Test
+    void countsNothingForAnIssueWithoutEvents() {
+        EventCountsView counts = eventRepository.countEvents(saveIssue("1").getId(), BASE_TIME, BASE_TIME);
+
+        assertThat(counts.getTotalEvents()).isZero();
+        assertThat(counts.getEventsSinceLastDay()).isZero();
+        assertThat(counts.getEventsSinceLastWeek()).isZero();
+    }
+
+    private long countEvents(Issue issue) {
+        return jdbcTemplate.queryForObject("select count(*) from events where issue_id = ?", Long.class, issue.getId());
     }
 
     private Issue saveIssue(String fingerprintDigit) {

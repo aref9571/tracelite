@@ -50,6 +50,10 @@ A `403` has the title `Forbidden` and the detail `The API key does not permit th
 
 Browsers can call the API from another origin only when that origin is configured in `TRACELITE_SECURITY_ALLOWEDORIGINS`. A preflight `OPTIONS` request from such an origin needs no key; the actual request still does.
 
+## Request IDs
+
+Every response, including errors, has an `X-Request-Id` header. Quote it when reporting a problem: the server logs every line of that request with the same ID. A client may send its own `X-Request-Id`; it is used when it is 1 to 64 letters, digits, `.`, `_` or `-`, and replaced by a generated UUID otherwise. The header is optional and never causes an error.
+
 ## OpenAPI
 
 The running backend publishes an OpenAPI 3 description of the implemented endpoints, generated from the code by springdoc-openapi:

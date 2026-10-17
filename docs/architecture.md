@@ -145,8 +145,8 @@ The query endpoints return the stored issue fields.
 
 `GET /api/v1/issues/{id}/events` and `/stats` are served by `IssueHistoryController` (`event.api`) and `IssueHistoryService` (`event.application`). They live in the event feature because they read events; the event feature already depends on the issue feature, and the issue feature does not depend on events.
 
-- **Event history** checks that the issue exists (`404` otherwise) and asks `ErrorEventRepository` for one page sorted by `receivedAt` and then `id`, both descending. This order matches the `events_issue_received_idx` index. `EventResponse` maps every stored field except the issue reference.
-- **Statistics** read the issue, count its stored events, count events received in the last 24 hours and 7 days with derived Spring Data queries, and group the last 14 UTC days with one native query (`to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')`). The service fills days without events with zero, so the response always has 14 entries.
+- **Event history** asks `ErrorEventRepository` for one page sorted by `receivedAt` and then `id`, both descending. This order matches the `events_issue_received_idx` index. Only when the page is empty does it check that the issue exists (`404` otherwise), so a normal request costs one query. `EventResponse` maps every stored field except the issue reference.
+- **Statistics** read the issue, count its stored events and those received in the last 24 hours and 7 days with one native query (`count(*) FILTER (WHERE ...)`), and group the last 14 UTC days with another (`to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')`). The service fills days without events with zero, so the response always has 14 entries.
 
 Both methods run in read-only transactions with `REPEATABLE READ` isolation. In PostgreSQL that gives every statement in the transaction the same snapshot, so a page and its total, or the counts in one statistics response, never disagree because an event arrived between two queries.
 
@@ -167,6 +167,14 @@ Both methods run in read-only transactions with `REPEATABLE READ` isolation. In 
 Filters and the page live in the URL rather than in component state, so a view can be bookmarked and the back button works. A `401` from any request clears the stored key and shows the key form again.
 
 The issue page loads the issue and its event page separately, so a failed event request leaves the summary and the resolve control usable. Resolve and reopen use the issue in the backend's response as the new state instead of changing the status locally. A `409` means the issue was already in that state or another change won, so the page fetches the issue again and shows its current status. Other failures leave the displayed issue unchanged.
+
+## Request IDs and logging
+
+`RequestIdFilter` (`common.web`) is the first filter for every request, before Spring Security. It accepts a well-formed `X-Request-Id` header or generates a UUID, returns the ID in the `X-Request-Id` response header, and keeps it in the SLF4J MDC as `requestId` while the request runs, so every log line of that request carries it. When an `/api/**` request finishes it logs the method, path, status and duration at `INFO`. Logs are plain text by default and JSON when `LOGGING_STRUCTURED_FORMAT_CONSOLE` is set ([ADR 0006](decisions/0006-request-ids-and-structured-logging.md)).
+
+## Performance and known limitations
+
+The Day 13 review of queries, transactions, concurrency, limits and logging, the ingestion benchmark with its measured results, and the known limitations are in [performance.md](performance.md).
 
 ## Error handling
 

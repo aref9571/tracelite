@@ -30,6 +30,8 @@ Raw logs answer these questions slowly. TraceLite collects errors as structured 
 | PostgreSQL schema for issues and events, with constraints and indexes | Implemented |
 | Consistent RFC 9457 error responses without internal details | Implemented |
 | Health, liveness and readiness endpoints | Implemented |
+| Request IDs (`X-Request-Id`) on every response and in every log line, one access log line per API request, optional JSON logs ([ADR 0006](docs/decisions/0006-request-ids-and-structured-logging.md)) | Implemented |
+| Reproducible ingestion benchmark with recorded measurements ([docs/performance.md](docs/performance.md)) | Implemented |
 | OpenAPI documentation (`/v3/api-docs`, Swagger UI at `/swagger-ui.html`) | Implemented |
 | React/TypeScript dashboard: issue list with status and environment filters, pagination, loading, empty and error states ([frontend/README.md](frontend/README.md)) | Implemented |
 | Dashboard issue page: summary, paginated event history with readable stack traces and context, resolve and reopen | Implemented |
@@ -61,9 +63,9 @@ tracelite/
 │       └── issue/           Issue grouping and management (api, application, domain, persistence)
 ├── docker-compose.yml       PostgreSQL and the backend container
 ├── frontend/                React and TypeScript dashboard (Vite, npm)
-├── docs/                    Architecture, API, database, security, development, testing docs
+├── docs/                    Architecture, API, database, security, development, testing, performance docs
 │   └── decisions/           Architecture decision records
-└── scripts/                 Development (smoke and Docker stack tests) and CI helper scripts
+└── scripts/                 Development (smoke and Docker stack tests), benchmark and CI helper scripts
 ```
 
 Empty feature packages are tracked with `.gitkeep` files and will be populated as each feature is implemented.
@@ -166,6 +168,7 @@ On Windows use `mvnw.cmd` instead of `./mvnw`. [docs/development.md](docs/develo
 - [Security](docs/security.md)
 - [Development](docs/development.md)
 - [Testing](docs/testing.md)
+- [Performance and reliability review](docs/performance.md)
 - [Architecture decision records](docs/decisions/)
 
 ## License

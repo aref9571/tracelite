@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `X-Request-Id` on every response, taken from a well-formed request header or generated, and added to every log line of the request; one `INFO` line per API request with method, path, status and duration; optional JSON console logs with `LOGGING_STRUCTURED_FORMAT_CONSOLE` ([ADR 0006](docs/decisions/0006-request-ids-and-structured-logging.md)).
+- Ingestion benchmark (`scripts/benchmark/IngestionBenchmark.java`), compiled in CI, and [docs/performance.md](docs/performance.md) with the measured results, statements per request, query plans and known limitations.
+
 - Dashboard issue page: paginated event history (10 per page, newest first, page kept in the URL) with each event's received and occurred times, correlation ID, message, context and a stack trace that separates the summary, frames, `Caused by` lines and omitted frames; the newest trace is expanded.
 - Resolve and reopen buttons on the issue page. The page shows the issue the backend returns; after a `409` it reloads the issue and says that another request or a new event changed it. Failures (`403`, server errors, an unreachable backend) are shown without changing the displayed status.
 - Dashboard component tests with React Testing Library in jsdom, and README screenshots of the dashboard.
@@ -70,6 +73,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Architecture decision records for the monolithic architecture, issue fingerprinting, and event ingestion.
 
 ### Changed
+
+- Issue statistics use one query for the total, 24-hour and 7-day counts instead of three, and event history checks that the issue exists only when the page is empty, so both endpoints make fewer database round trips.
+- The backend image is built with the official Maven image instead of the Maven Wrapper, so the image build no longer depends on a single, unretried download of Maven.
 
 - HTTP integration tests share one support class for setup, authenticated requests and simultaneous requests instead of repeating them in each class.
 - All `/api/v1` endpoints now require an API key. Actuator endpoints other than `health` and `info`, which were already unexposed, now get `401` or `403` instead of `404`, and `OPTIONS /api/v1/events` needs an ingestion key.

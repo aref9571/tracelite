@@ -1,11 +1,10 @@
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM maven:3.9.11-eclipse-temurin-21-noble AS build
 WORKDIR /workspace
-COPY mvnw pom.xml ./
-COPY .mvn/wrapper/maven-wrapper.properties .mvn/wrapper/
+COPY pom.xml ./
 COPY backend/pom.xml backend/
 COPY backend/src/main backend/src/main
 RUN --mount=type=cache,target=/root/.m2 \
-    ./mvnw --batch-mode --no-transfer-progress --projects backend --also-make package -DskipTests \
+    mvn --batch-mode --no-transfer-progress --projects backend --also-make package -DskipTests \
     && java -Djarmode=tools -jar backend/target/tracelite-backend.jar extract --layers --launcher --destination extracted
 
 FROM eclipse-temurin:21-jre-noble
